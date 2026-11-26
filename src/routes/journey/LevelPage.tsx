@@ -121,7 +121,7 @@ export function LevelPage() {
           <Button
             className="mt-4"
             onClick={() => {
-              setJourneyLevel(result.level, result.score);
+              setJourneyLevel(result.level, result.score, answers);
               void navigate({ to: "/journey" });
             }}
           >

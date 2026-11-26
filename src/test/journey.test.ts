@@ -5,7 +5,6 @@ import {
   allPassed,
   gradeQuiz,
   mentorFeedback,
-  quizFor,
   recordAttempt,
   stageStatuses,
 } from "../lib/journey/grading";
@@ -135,7 +134,7 @@ describe("failed-quiz flow", () => {
   const stage = learningProjectById("traffic-light")!.stages[0]!;
 
   it("gives strengths, weak points, an alternative explanation and a practice task", () => {
-    const quiz = quizFor(stage);
+    const quiz = stage.quizzes[0];
     const answers = correctAnswers(quiz).map((a, i) => (i < 2 ? wrong(quiz.questions[i]!) : a));
     const grade = gradeQuiz(quiz, answers);
     expect(grade.passed).toBe(false);
@@ -148,14 +147,13 @@ describe("failed-quiz flow", () => {
     expect(feedback.practiceTask).toContain("3D Lab");
   });
 
-  it("switches to the second quiz version after a failed attempt, then alternates", () => {
-    expect(quizFor(stage).id).toBe(stage.quizzes[0].id);
-    const once = recordAttempt({}, stage.id, { score: 40, passed: false });
-    expect(quizFor(stage, once[stage.id]).id).toBe(stage.quizzes[1].id);
-    const twice = recordAttempt(once, stage.id, { score: 40, passed: false });
-    expect(quizFor(stage, twice[stage.id]).id).toBe(stage.quizzes[0].id);
+  // Phase 5 replaced the fixed A/B alternation with adaptive quizzes (see personalize.test.ts);
+  // the bank still holds both written versions.
+  it("keeps both written quiz versions in the stage's question bank", () => {
     const prompts = (quiz: Quiz) => quiz.questions.map((q) => q.prompt);
     expect(prompts(stage.quizzes[1])).not.toEqual(prompts(stage.quizzes[0]));
+    const bank = new Set(stage.bank.map((q) => q.prompt));
+    for (const q of [...stage.quizzes[0].questions, ...stage.quizzes[1].questions]) expect(bank.has(q.prompt)).toBe(true);
   });
 });
 

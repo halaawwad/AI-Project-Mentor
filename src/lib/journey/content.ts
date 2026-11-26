@@ -5,9 +5,16 @@ import type { Bi } from "./types";
  * FIRST option is the correct one; options are shuffled deterministically when quizzes are built.
  */
 export type RawQuestion = [skill: string, prompt: string, options: [string, string, string, string], explanation: string];
+export type RawDifficulty = "easy" | "medium" | "hard";
+/** Extra bank question with an explicit difficulty (first option is correct). */
+export type RawBankQuestion = [...RawQuestion, RawDifficulty];
 
 export interface RawStage {
   id: string;
+  /** Difficulty of each question in quizzes A and B: one letter per question, e/m/h. */
+  difficulty: [string, string];
+  /** More questions for the skill-tagged bank, so adaptive quizzes don't repeat. */
+  extra: RawBankQuestion[];
   title: Bi;
   goal: string;
   explanation: string;
@@ -18,6 +25,13 @@ export interface RawStage {
 
 export const basicsStage: RawStage = {
   id: "basics",
+  difficulty: ["ememe", "eemee"],
+  extra: [
+    ["Resistors", "An LED circuit works but the LED is very dim. The resistor is 10 kΩ. What's the likely fix?", ["Use a smaller value such as 220 Ω", "Use a 100 kΩ resistor", "Remove GND", "Use an analog pin"], "A large resistor lets very little current through; 220 Ω gives typical brightness.", "hard"],
+    ["Closed circuits", "Which path makes a complete circuit for an LED?", ["5V → resistor → LED anode → LED cathode → GND", "5V → LED anode only", "GND → GND", "5V → 5V"], "Current must leave the supply, pass through the parts and return to GND.", "medium"],
+    ["Voltage", "The Uno has 5V and 3V3 pins. Which statement is right?", ["They supply different voltages; use the one your part is rated for", "They are the same pin", "3V3 is always stronger", "5V is only an input"], "Pick the supply that matches the part's rating.", "medium"],
+    ["Current", "Why does a resistor reduce an LED's current?", ["It opposes the flow, so less current flows for the same voltage", "It stores current", "It adds voltage", "It turns current into light"], "Ohm's law: I = V ÷ R.", "hard"],
+  ],
   title: { en: "Electricity basics", ar: "أساسيات الكهرباء" },
   goal: "Understand voltage, current, ground, and how a breadboard and controller pins complete a circuit.",
   explanation:
@@ -50,6 +64,13 @@ export const basicsStage: RawStage = {
 export const irrigationStages: RawStage[] = [
   {
     id: "irrigation-sensor",
+    difficulty: ["eemme", "ehmmm"],
+    extra: [
+      ["ADC range", "A reading of about 512 on the Uno means the input is roughly…", ["2.5 V, half of 5 V", "5 V", "0 V", "12 V"], "512 is about half of 1023.", "hard"],
+      ["Powering sensors", "Which wire carries the moisture signal to the Arduino?", ["AO to A0", "VCC to 5V", "GND to GND", "DO to RESET"], "AO carries the analog signal; VCC and GND are power.", "easy"],
+      ["Digital output", "If you use DO instead of AO, what do you lose?", ["The full moisture range; you only get dry or wet", "Nothing", "The power supply", "The ground"], "DO is only HIGH or LOW at the set threshold.", "hard"],
+      ["Analog input", "Which function reads the sensor on A0?", ["analogRead(A0)", "digitalWrite(A0)", "pulseIn(A0)", "tone(A0)"], "analogRead returns 0–1023 for an analog input.", "easy"],
+    ],
     title: { en: "Reading soil moisture", ar: "قراءة رطوبة التربة" },
     goal: "Read the soil moisture sensor with an analog pin and understand what the numbers mean.",
     explanation:
@@ -80,6 +101,13 @@ export const irrigationStages: RawStage[] = [
   },
   {
     id: "irrigation-relay",
+    difficulty: ["eemeh", "emmee"],
+    extra: [
+      ["Relay contacts", "With the pump on COM and NC instead of NO, what happens?", ["The pump runs while the relay is off", "The pump never runs", "Nothing changes", "The relay overheats"], "NC is closed while the relay is off.", "hard"],
+      ["Active LOW", "An active-LOW relay should stay off at start-up. What should setup() write to IN?", ["HIGH", "LOW", "Nothing", "analogRead"], "For active-LOW modules, HIGH means off.", "hard"],
+      ["Control signal", "Which function switches the relay from the Arduino?", ["digitalWrite on the IN pin", "analogRead on COM", "pulseIn on NO", "tone on NC"], "IN is driven like any digital output.", "easy"],
+      ["Current limits", "The pump needs far more current than D7 can give. Which part solves this here?", ["The relay module", "A 220 Ω resistor", "The LCD", "The soil sensor"], "The relay switches the pump's own supply.", "medium"],
+    ],
     title: { en: "Switching the pump with a relay", ar: "تشغيل المضخة عبر الريليه" },
     goal: "Use a relay so a controller pin can switch the pump safely.",
     explanation:
@@ -110,6 +138,13 @@ export const irrigationStages: RawStage[] = [
   },
   {
     id: "irrigation-logic",
+    difficulty: ["memme", "heeeh"],
+    extra: [
+      ["Hysteresis", "With a single threshold of 600, what happens when the reading hovers around 600?", ["The pump switches on and off rapidly", "The pump stays off", "The LCD turns off", "Nothing"], "That's why two thresholds are used.", "medium"],
+      ["I²C wiring", "On the LCD module, which pins carry I²C?", ["SDA and SCL", "VCC and GND", "AO and DO", "COM and NO"], "VCC and GND are power; SDA and SCL are data and clock.", "easy"],
+      ["Program loop", "Why update the LCD after switching the relay?", ["So the display shows the current pump state", "The relay needs the LCD", "To read the sensor", "I²C requires it"], "Show what the system just did.", "medium"],
+      ["Fail-safe logic", "Which pair is a sensible fail-safe design?", ["Hysteresis plus a maximum watering time", "One threshold and no limit", "No sensor", "Watering every second"], "Thresholds prevent chatter; a time limit covers sensor failure.", "hard"],
+    ],
     title: { en: "Watering logic and display", ar: "منطق الري والعرض" },
     goal: "Combine the sensor, relay and LCD: water only when the soil is dry, and show the reading.",
     explanation:
@@ -143,6 +178,13 @@ export const irrigationStages: RawStage[] = [
 export const trafficStages: RawStage[] = [
   {
     id: "traffic-leds",
+    difficulty: ["eehme", "emmhm"],
+    extra: [
+      ["Ohm's law", "A green LED drops about 2.4 V. With a 5 V pin and 220 Ω, the current is about…", ["12 mA", "1.2 mA", "120 mA", "24 mA"], "(5 − 2.4) ÷ 220 ≈ 0.012 A.", "hard"],
+      ["Current limiting", "Where does the resistor go in an LED circuit?", ["In series with the LED, on either side", "In parallel across the board", "Only on the Uno's GND pin", "Nowhere"], "In series, it limits the LED current.", "medium"],
+      ["Colour mixing", "Which RGB channels make amber in this project?", ["Red and green", "Blue only", "Red and blue", "Green and blue"], "Red plus green looks amber/yellow.", "easy"],
+      ["LED polarity", "Which LED leg is usually longer?", ["The anode (+)", "The cathode (−)", "Both are equal", "It depends on the colour"], "The longer leg is normally the anode.", "easy"],
+    ],
     title: { en: "LEDs and resistors", ar: "الصمامات والمقاومات" },
     goal: "Connect LEDs the right way round, with a correctly sized current-limiting resistor.",
     explanation:
@@ -173,6 +215,13 @@ export const trafficStages: RawStage[] = [
   },
   {
     id: "traffic-timing",
+    difficulty: ["eeemm", "emehm"],
+    extra: [
+      ["State machines", "What does a traffic-light state machine need to remember?", ["The current state and when it started", "Only the LED colour code", "The USB speed", "Nothing"], "The state and its start time decide the next change.", "medium"],
+      ["Non-blocking timing", "millis() returns…", ["the milliseconds since the board started", "the current date", "the LED brightness", "a sensor reading"], "Compare it with a saved time to measure elapsed time.", "easy"],
+      ["Light sequence", "After amber, the next state is…", ["red", "green", "amber again", "all off"], "Green → amber → red.", "easy"],
+      ["State machines", "To add a pedestrian phase, the cleanest change is to…", ["add a new state with its own duration and transitions", "add more delay() calls", "remove the amber state", "use an analog pin"], "State machines grow by adding states and transitions.", "hard"],
+    ],
     title: { en: "Timing the light sequence", ar: "توقيت تسلسل الإشارة" },
     goal: "Drive several outputs in a timed sequence without freezing the program.",
     explanation:
@@ -203,6 +252,13 @@ export const trafficStages: RawStage[] = [
   },
   {
     id: "traffic-button",
+    difficulty: ["memme", "eemhm"],
+    extra: [
+      ["Digital inputs", "Which function reads the button state?", ["digitalRead(2)", "analogWrite(2)", "pulseIn(2)", "tone(2)"], "digitalRead returns HIGH or LOW.", "easy"],
+      ["INPUT_PULLUP", "With INPUT_PULLUP, where is the button wired?", ["Between the pin and GND", "Between the pin and 5V", "Across the LED", "To A0 only"], "The internal pull-up holds HIGH; the button pulls it to GND.", "medium"],
+      ["Debouncing", "One press counts as three. The fix is to…", ["ignore changes for about 20–50 ms after the first one", "use a bigger LED", "remove the resistor", "press harder"], "Debouncing filters out contact bounce.", "medium"],
+      ["Floating inputs", "An input reads HIGH when you touch the wire, without pressing. Most likely…", ["the pin is floating; add a pull-down or use INPUT_PULLUP", "the button is broken", "the LED is reversed", "it's normal"], "A floating pin picks up noise from your hand.", "hard"],
+    ],
     title: { en: "Pedestrian button", ar: "زر المشاة" },
     goal: "Read a push button reliably and use it to change the light sequence.",
     explanation:
@@ -236,6 +292,13 @@ export const trafficStages: RawStage[] = [
 export const parkingStages: RawStage[] = [
   {
     id: "parking-distance",
+    difficulty: ["eemmh", "emeeh"],
+    extra: [
+      ["Triggering", "Which HC-SR04 pin receives the start pulse?", ["TRIG", "ECHO", "GND", "VCC"], "TRIG starts the measurement; ECHO reports the time.", "easy"],
+      ["Distance formula", "An object is 50 cm away. The echo lasts about…", ["2900 μs", "50 μs", "290 μs", "29000 μs"], "50 × 58 = 2900 μs.", "hard"],
+      ["Echo timing", "ECHO stays HIGH longer when the object is…", ["farther away", "closer", "the same distance", "smaller"], "More distance means a longer round trip.", "easy"],
+      ["Logic levels", "Why is it fine to connect the HC-SR04 directly to an Uno?", ["The Uno's pins work at 5 V, the same as ECHO", "The Uno ignores voltage", "ECHO is only 1 V", "It isn't fine at all"], "A 5 V board accepts the 5 V ECHO signal.", "medium"],
+    ],
     title: { en: "Measuring distance with the HC-SR04", ar: "قياس المسافة بحساس HC-SR04" },
     goal: "Trigger the ultrasonic sensor, time the echo and convert it to centimetres.",
     explanation:
@@ -266,6 +329,13 @@ export const parkingStages: RawStage[] = [
   },
   {
     id: "parking-buzzer",
+    difficulty: ["ememm", "meeme"],
+    extra: [
+      ["Polarity", "On the catalog's active buzzer, which terminal goes to the signal pin?", ["PLUS", "MINUS", "GND", "VCC"], "PLUS to the pin, MINUS to GND.", "easy"],
+      ["Warning design", "Beeping faster as the car gets closer works because…", ["the beep rate carries the distance information", "faster beeps use less power", "slow beeps aren't allowed", "the buzzer needs it"], "The beep rate maps to urgency.", "medium"],
+      ["Active vs passive", "You need different tones for different warnings. Which buzzer suits that?", ["A passive buzzer driven with tone()", "An active buzzer with HIGH/LOW", "No buzzer", "An LED"], "A passive buzzer plays the frequency you send it.", "hard"],
+      ["Current limits", "Why might a loud buzzer need a transistor?", ["Its current can exceed what a pin can safely supply", "Transistors make sound", "For I²C", "To read the sensor"], "The transistor switches the larger current.", "hard"],
+    ],
     title: { en: "Beeping with an active buzzer", ar: "التنبيه بالجرس" },
     goal: "Drive the active buzzer from a digital pin and make clear warning beeps.",
     explanation:
@@ -296,6 +366,13 @@ export const parkingStages: RawStage[] = [
   },
   {
     id: "parking-warning",
+    difficulty: ["eemhm", "emmme"],
+    extra: [
+      ["Edge cases", "Which reading should NOT trigger the red 'too close' warning?", ["0 from a timeout with no echo", "5 cm", "8 cm", "9 cm"], "0 means no echo, so treat it as far.", "hard"],
+      ["Mapping values", "With pause = distance × 10 ms, which distance beeps fastest?", ["10 cm", "30 cm", "50 cm", "100 cm"], "A smaller distance gives a shorter pause.", "medium"],
+      ["Thresholds", "How many warning zones does this design use?", ["Three: clear, beeping and very close", "One", "Ten", "None"], "Green, beeping, then red with a continuous tone.", "easy"],
+      ["Noisy readings", "The average of the last three readings, 40, 41 and 39 cm, is…", ["40 cm", "120 cm", "13 cm", "39 cm"], "(40 + 41 + 39) ÷ 3 = 40.", "medium"],
+    ],
     title: { en: "From distance to warning", ar: "من المسافة إلى التحذير" },
     goal: "Turn distance readings into LED and beep warnings that respond smoothly.",
     explanation:

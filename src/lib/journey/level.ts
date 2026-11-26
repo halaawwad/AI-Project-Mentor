@@ -7,10 +7,11 @@ export const selfRatings: { value: 0 | 1 | 2; label: Bi }[] = [
   { value: 2, label: { en: "I'm comfortable with sensors and code", ar: "أتعامل بثقة مع الحساسات والبرمجة" } },
 ];
 
+/** Skill tags match the stage banks, so level-check answers seed the learner's mastery. */
 export const levelQuestions: Question[] = [
-  buildQuestion("level-1", ["Current limiting", "What does a resistor in series with an LED do?", ["Limits the current", "Raises the voltage", "Makes the LED blink", "Stores data"], "The resistor keeps the LED current at a safe level."]),
-  buildQuestion("level-2", ["Analog input", "An Arduino Uno analog input such as A0 reads values from…", ["0 to 1023", "0 to 1", "0 to 12", "only HIGH or LOW"], "The Uno converts 0–5 V into 0–1023."]),
-  buildQuestion("level-3", ["Loads", "Why is a relay or driver used for a motor or pump?", ["It needs more current than a controller pin can supply", "Motors need Wi-Fi", "To read sensors", "To make it quieter"], "Controller pins can only supply small currents."]),
+  buildQuestion("level-1", ["Current limiting", "What does a resistor in series with an LED do?", ["Limits the current", "Raises the voltage", "Makes the LED blink", "Stores data"], "The resistor keeps the LED current at a safe level."], "easy"),
+  buildQuestion("level-2", ["Analog input", "An Arduino Uno analog input such as A0 reads values from…", ["0 to 1023", "0 to 1", "0 to 12", "only HIGH or LOW"], "The Uno converts 0–5 V into 0–1023."], "easy"),
+  buildQuestion("level-3", ["Current limits", "Why is a relay or driver used for a motor or pump?", ["It needs more current than a controller pin can supply", "Motors need Wi-Fi", "To read sensors", "To make it quieter"], "Controller pins can only supply small currents."], "easy"),
 ];
 
 export const levelInfo: Record<Level, { title: Bi; path: string }> = {

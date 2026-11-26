@@ -7,6 +7,7 @@ export const STORAGE_KEYS = {
   bom: "aipm.bom.v1",
   labProject: "aipm.lab.project.v1",
   journey: "aipm.journey.v1",
+  activeLearner: "aipm.learner.active",
 } as const;
 
 export const storageEvent = "aipm-storage-result";

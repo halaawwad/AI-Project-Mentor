@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, CircleDot, Lock, PackageSearch, Trophy } from "lucide-react";
 import { DemoBadge, JourneyLayout, ResetDemoButton } from "@/components/journey/JourneyUi";
+import { LanguageToggle, SkillsPanel } from "@/components/journey/Personalization";
 import { Button } from "@/components/ui/button";
 import { allPassed, stageStatuses } from "@/lib/journey/grading";
 import { levelInfo } from "@/lib/journey/level";
@@ -59,10 +60,12 @@ export function JourneyPage() {
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <DemoBadge generated={generated} />
+          <LanguageToggle language={journey.language} />
           <ResetDemoButton />
         </div>
       }
     >
+      <SkillsPanel profile={journey.profile} stages={stages} />
       <section className="glass-panel rounded-[22px] p-5">
         <p className="text-sm">
           {stages.length} stages · pass each quiz with {PASS_MARK}% or more to unlock the next stage.{" "}

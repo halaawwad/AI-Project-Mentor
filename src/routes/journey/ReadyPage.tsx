@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, Box, CheckCircle2, Package, PartyPopper } from "lucide-react";
 import { DemoBadge, JourneyLayout, ResetDemoButton } from "@/components/journey/JourneyUi";
 import { PartLinks } from "@/components/journey/PartLinks";
+import { SkillsPanel } from "@/components/journey/Personalization";
 import { Button } from "@/components/ui/button";
 import { usePartPreviews } from "@/lib/lab/usePartPreviews";
 import { allPassed, skillsOf, stageStatuses } from "@/lib/journey/grading";
@@ -72,6 +73,7 @@ export function ReadyPage() {
           </Button>
         </div>
       </section>
+      <SkillsPanel profile={journey.profile} stages={stages} title="Final mastery per skill" />
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="glass-panel rounded-[22px] p-5" aria-label="Skills learned">
           <h2 className="text-sm font-bold">

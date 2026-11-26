@@ -105,8 +105,8 @@ export function classifyError(error: unknown, timedOut: boolean): FallbackReason
   return "bad-response";
 }
 
-/** Rejects blocked, cut-off and empty answers before parsing. */
-function responseText(response: GenerateContentResponse) {
+/** Rejects blocked, cut-off and empty answers before parsing. Shared with the quiz generator. */
+export function responseText(response: GenerateContentResponse) {
   if (response.promptFeedback?.blockReason) throw new AiSuggestionError("blocked");
   const finish = String(response.candidates?.[0]?.finishReason ?? "");
   if (BLOCKED_FINISH.has(finish)) throw new AiSuggestionError("blocked");

@@ -88,15 +88,44 @@ All suggestions go through `suggestParts(description)` in `src/lib/suggest/index
   answer, or an unusable response. The page says why, in Arabic and English. Example projects
   return curated local results; other text uses keyword matching.
 
+### Personalized quizzes (phase 5)
+
+- **Learner profile** (per learner, inside the journey): mastery per skill (0–100, updated after
+  every quiz from the skill tags of right and wrong answers), current difficulty (easy, medium or
+  hard, set from the level check), and per-stage history: questions asked, wrong answers,
+  attempts, and the cached next quiz.
+- **Adaptive rules** (`src/lib/journey/adaptive.ts`, deterministic):
+  - Below 80%: the next quiz focuses on the missed skills. It's one step easier if the score was
+    below 50%, otherwise the same difficulty.
+  - 80–99%: the next stage's first quiz adds 1–2 review questions on the weakest skill so far.
+  - 100% on the first try: difficulty goes up one step.
+  - Questions already asked in a stage are reused only when no alternatives remain.
+- **Gemini** (`aiQuiz.ts`): one request per quiz, no retries. It sends the stage lesson, part pin
+  data, the profile, recent wrong answers and the already-asked questions. It receives a
+  personalized explanation, a practice task and 5 questions.
+- **Strict validation:** the whole quiz is rejected unless every question has 4 distinct options,
+  one correct index, a known skill and difficulty, and no duplicate or previously asked prompt.
+  It must also cover the plan's focus and review skills and mention no part outside the provided
+  data. Prepared quizzes are cached, so a reload doesn't send another request.
+- **Local fallback** (no key, offline, free limit, errors, invalid answer): the same plan selects
+  from each stage's 14-question skill- and difficulty-tagged bank, with the prewritten explanation
+  for the weakest skill.
+- **Labels:** "AI-generated for you" (Gemini) or "Selected for you from local content". Each quiz
+  starts with a "Why this quiz" card. The path page shows mastery bars and the current difficulty.
+- **Demo learners:** a "Student A / Student B" switch keeps two separate journeys, to show different
+  quizzes on the same stage. Reset demo clears both.
+- **Language:** Arabic by default (technical terms stay in English), switchable on the path page.
+  Local content is prewritten in English.
+
 ### Learning journey (demo content)
 
 - **Paths:** fully written for traffic light, parking sensor and automatic irrigation
   (`src/lib/journey/content.ts`). Beginners get an extra Electricity basics stage. Other
   descriptions get a path generated from the approved parts using catalog and connection-sheet
   data (`generic.ts`).
-- **Quizzes:** two 5-question versions per stage, graded in the browser. Pass mark is 80%. Mentor
-  strengths and weak points come from the skills of right and wrong answers. The alternative
-  explanation and practice task are prewritten per stage.
+- **Quizzes:** 5 questions per quiz, chosen per learner (see Personalized quizzes) and graded in
+  the browser. Pass mark is 80%. Mentor strengths and weak points come from the skills of right
+  and wrong answers.
 - **Labels:** everything here is labelled "Demo content". Only Describe Project suggestions are
   AI.
 - **Progress:** saved under `aipm.journey.v1`. Invalid data is reported and left untouched. Reset
@@ -104,7 +133,11 @@ All suggestions go through `suggestParts(description)` in `src/lib/suggest/index
 
 ## Limitations
 
-- Lesson text, quizzes and mentor feedback are in English, with Arabic titles and labels.
+- Lesson text and local quiz content are in English, with Arabic titles and labels. Only Gemini
+  quizzes and explanations follow the Arabic/English setting.
+- Gemini answers are checked for structure, repeats, skills and part names, but their technical
+  accuracy can't be fully verified automatically. Reworded repeats aren't detected; only exact
+  repeats after normalization are.
 - Level "advanced" uses the same stages as "intermediate"; it only allows jumping to the quiz.
 
 - AI suggestions can be incomplete or wrong. Students should review every part and quantity

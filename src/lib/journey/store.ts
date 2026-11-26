@@ -1,14 +1,38 @@
 import { useSyncExternalStore } from "react";
 import { catalogByKey } from "@/lib/componentCatalog";
 import { readLocal, removeLocal, STORAGE_KEYS, writeLocal } from "@/lib/storage";
+import { emptyHistory, initialProfile, updateProfileAfterQuiz } from "./adaptive";
+import { recordAttempt, type QuizGrade } from "./grading";
 import { learningProjectById, matchProject } from "./projects";
-import type { JourneyState, Level, LearningProjectId, ProjectPart, StageProgress } from "./types";
+import {
+  DIFFICULTIES,
+  type Difficulty,
+  type JourneyState,
+  type Language,
+  type LearnerProfile,
+  type Level,
+  type LearningProjectId,
+  type PersonalizedQuiz,
+  type ProjectPart,
+  type Question,
+  type StageHistory,
+  type StageProgress,
+} from "./types";
 
-const KEY = STORAGE_KEYS.journey;
 const LEVELS: Level[] = ["beginner", "intermediate", "advanced"];
+export type LearnerId = "a" | "b";
+export const LEARNERS: { id: LearnerId; en: string; ar: string }[] = [
+  { id: "a", en: "Student A", ar: "الطالب أ" },
+  { id: "b", en: "Student B", ar: "الطالب ب" },
+];
+/** Each demo learner has a separate journey; Student A keeps the original key. */
+export const journeyKey = (learner: LearnerId) =>
+  learner === "a" ? STORAGE_KEYS.journey : `${STORAGE_KEYS.journey}.learner-b`;
 
-export const emptyJourney = (): JourneyState => ({
+export const emptyJourney = (language: Language = "ar"): JourneyState => ({
   version: 1,
+  language,
+  profile: null,
   entry: null,
   project: null,
   parts: [],
@@ -19,13 +43,117 @@ export const emptyJourney = (): JourneyState => ({
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+const strings = (value: unknown) =>
+  Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
+const isDifficulty = (value: unknown): value is Difficulty => DIFFICULTIES.includes(value as Difficulty);
+
+function sanitizeQuestion(raw: unknown): Question | null {
+  if (!isRecord(raw)) return null;
+  const options = strings(raw["options"]);
+  const correct = raw["correct"];
+  if (
+    typeof raw["id"] !== "string" ||
+    typeof raw["skill"] !== "string" ||
+    typeof raw["prompt"] !== "string" ||
+    typeof raw["explanation"] !== "string" ||
+    !isDifficulty(raw["difficulty"]) ||
+    options.length !== 4 ||
+    !Number.isInteger(correct) ||
+    (correct as number) < 0 ||
+    (correct as number) > 3
+  )
+    return null;
+  return {
+    id: raw["id"],
+    skill: raw["skill"],
+    difficulty: raw["difficulty"],
+    prompt: raw["prompt"],
+    options,
+    correct: correct as number,
+    explanation: raw["explanation"],
+  };
+}
+
+/** A cached quiz is kept only if every part of it is well-formed; otherwise it is rebuilt. */
+function sanitizePending(raw: unknown): PersonalizedQuiz | null {
+  if (!isRecord(raw) || !isRecord(raw["plan"])) return null;
+  const plan = raw["plan"];
+  const questions = Array.isArray(raw["questions"]) ? raw["questions"].map(sanitizeQuestion) : [];
+  if (
+    typeof raw["id"] !== "string" ||
+    typeof raw["stageId"] !== "string" ||
+    !Number.isInteger(raw["attempt"]) ||
+    (raw["source"] !== "ai" && raw["source"] !== "local") ||
+    (raw["language"] !== "ar" && raw["language"] !== "en") ||
+    typeof raw["explanation"] !== "string" ||
+    typeof raw["practiceTask"] !== "string" ||
+    !questions.length ||
+    questions.some((q) => !q) ||
+    !isDifficulty(plan["difficulty"]) ||
+    !["first", "retry", "next-stage", "practice"].includes(plan["kind"] as string)
+  )
+    return null;
+  return {
+    id: raw["id"],
+    stageId: raw["stageId"],
+    attempt: raw["attempt"] as number,
+    source: raw["source"],
+    ...(typeof raw["fallbackReason"] === "string" ? { fallbackReason: raw["fallbackReason"] as NonNullable<PersonalizedQuiz["fallbackReason"]> } : {}),
+    plan: {
+      kind: plan["kind"] as PersonalizedQuiz["plan"]["kind"],
+      difficulty: plan["difficulty"],
+      focusSkills: strings(plan["focusSkills"]),
+      reviewSkill: typeof plan["reviewSkill"] === "string" ? plan["reviewSkill"] : null,
+      reviewCount: Number.isInteger(plan["reviewCount"]) ? (plan["reviewCount"] as number) : 0,
+      raised: plan["raised"] === true,
+      easier: plan["easier"] === true,
+    },
+    language: raw["language"],
+    explanation: raw["explanation"],
+    practiceTask: raw["practiceTask"],
+    questions: questions as Question[],
+  };
+}
+
+function sanitizeProfile(raw: unknown): LearnerProfile | null {
+  if (!isRecord(raw) || !isDifficulty(raw["difficulty"])) return null;
+  const mastery: Record<string, number> = {};
+  if (isRecord(raw["mastery"]))
+    for (const [skill, value] of Object.entries(raw["mastery"]))
+      if (typeof value === "number" && Number.isFinite(value)) mastery[skill] = Math.max(0, Math.min(100, value));
+  const history: Record<string, StageHistory> = {};
+  if (isRecord(raw["history"]))
+    for (const [stageId, entry] of Object.entries(raw["history"])) {
+      if (!isRecord(entry)) continue;
+      history[stageId] = {
+        ...emptyHistory(),
+        asked: strings(entry["asked"]),
+        lastWrongSkills: strings(entry["lastWrongSkills"]),
+        wrong: Array.isArray(entry["wrong"])
+          ? entry["wrong"].filter(
+              (w): w is StageHistory["wrong"][number] =>
+                isRecord(w) && ["prompt", "skill", "chosen", "correct"].every((k) => typeof w[k] === "string"),
+            )
+          : [],
+        attempts: Array.isArray(entry["attempts"])
+          ? entry["attempts"].filter(
+              (a): a is StageHistory["attempts"][number] =>
+                isRecord(a) && typeof a["score"] === "number" && typeof a["quizId"] === "string" && (a["source"] === "ai" || a["source"] === "local"),
+            )
+          : [],
+        pending: sanitizePending(entry["pending"]),
+      };
+    }
+  const baseline = typeof raw["baseline"] === "number" && Number.isFinite(raw["baseline"]) ? raw["baseline"] : 50;
+  return { mastery, baseline, difficulty: raw["difficulty"], history };
+}
 
 /**
  * Keeps every valid field of a saved journey and drops the rest: unknown part keys, invalid
- * quantities, unknown levels and malformed progress entries.
+ * quantities, unknown levels and malformed progress, profile or cached-quiz entries.
  */
 export function sanitizeJourney(raw: Record<string, unknown>): JourneyState {
-  const state = emptyJourney();
+  const state = emptyJourney(raw["language"] === "en" ? "en" : "ar");
   if (raw["entry"] === "idea" || raw["entry"] === "learning") state.entry = raw["entry"];
   const project = raw["project"];
   if (isRecord(project) && typeof project["id"] === "string") {
@@ -66,21 +194,42 @@ export function sanitizeJourney(raw: Record<string, unknown>): JourneyState {
           bestScore: entry["bestScore"],
           lastScore: typeof entry["lastScore"] === "number" ? entry["lastScore"] : null,
         } satisfies StageProgress;
+  state.profile = sanitizeProfile(raw["profile"]);
+  // A journey that already has a level always gets a profile.
+  if (state.level && !state.profile) state.profile = initialProfile(state.level);
   return state;
 }
 
-// In-memory copy: the journey keeps working for this session even if storage is blocked.
+// In-memory copies: the journey keeps working for this session even if storage is blocked.
+let active: LearnerId | null = null;
 let memory: JourneyState | null = null;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((listener) => listener());
 
+export function activeLearner(): LearnerId {
+  if (!active) active = readLocal<string>(STORAGE_KEYS.activeLearner, "a", (v) => v === "a" || v === "b") === "b" ? "b" : "a";
+  return active;
+}
+
+/** Switches the demo learner; each learner has a separate journey and profile. */
+export function switchLearner(learner: LearnerId) {
+  active = learner;
+  memory = null;
+  try {
+    writeLocal(STORAGE_KEYS.activeLearner, learner);
+  } catch {
+    /* the switch still works for this session */
+  }
+  notify();
+}
+
 /**
- * Reads the saved journey. Data that isn't a version-1 object is reported as unreadable and
- * left untouched (the storage notice offers a reset); partly invalid data is sanitized.
+ * Reads the active learner's saved journey. Data that isn't a version-1 object is reported as
+ * unreadable and left untouched (the storage notice offers a reset); partly invalid data is sanitized.
  */
 export function readJourney(): JourneyState {
   if (!memory) {
-    const raw = readLocal<unknown>(KEY, null, (v) => isRecord(v) && v["version"] === 1);
+    const raw = readLocal<unknown>(journeyKey(activeLearner()), null, (v) => isRecord(v) && v["version"] === 1);
     memory = isRecord(raw) ? sanitizeJourney(raw) : emptyJourney();
   }
   return memory;
@@ -91,7 +240,7 @@ export function saveJourney(next: JourneyState): boolean {
   memory = next;
   notify();
   try {
-    writeLocal(KEY, next);
+    writeLocal(journeyKey(activeLearner()), next);
     return true;
   } catch {
     return false;
@@ -101,31 +250,31 @@ export function saveJourney(next: JourneyState): boolean {
 export const updateJourney = (change: (state: JourneyState) => JourneyState) =>
   saveJourney(change(readJourney()));
 
-/** "Reset demo": clears journey progress and the BOM (lab circuits are kept). */
+/** "Reset demo": clears both learners' journeys and the BOM (lab circuits are kept). */
 export function resetDemo() {
-  removeLocal(KEY);
+  for (const learner of LEARNERS) removeLocal(journeyKey(learner.id));
   removeLocal(STORAGE_KEYS.bom);
+  removeLocal(STORAGE_KEYS.activeLearner);
+  active = "a";
   memory = null;
   notify();
 }
 
-export function useJourney() {
-  return useSyncExternalStore(
-    (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    readJourney,
-    readJourney,
-  );
-}
+const subscribe = (listener: () => void) => {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+};
+export const useJourney = () => useSyncExternalStore(subscribe, readJourney, readJourney);
+export const useActiveLearner = () => useSyncExternalStore(subscribe, activeLearner, activeLearner);
 
 /** Idea entry: approved parts from Describe Project; a known project gets its written path. */
 export function startIdeaJourney(description: string, parts: ProjectPart[]) {
   const matched = matchProject(description);
   const written = matched ? learningProjectById(matched) : null;
   return saveJourney({
-    ...emptyJourney(),
+    ...emptyJourney(readJourney().language),
     entry: "idea",
     project: {
       id: written?.id ?? "custom",
@@ -141,13 +290,48 @@ export function startLearningJourney(id: LearningProjectId) {
   const project = learningProjectById(id);
   if (!project) return false;
   return saveJourney({
-    ...emptyJourney(),
+    ...emptyJourney(readJourney().language),
     entry: "learning",
     project: { id: project.id, title: project.title, description: project.summary.en },
     parts: project.parts.map((p) => ({ ...p })),
   });
 }
 
-/** Setting a level starts the path over, since the stages can change. */
-export const setJourneyLevel = (level: Level, levelScore: number) =>
-  updateJourney((state) => ({ ...state, level, levelScore, progress: {} }));
+/** Setting a level starts the path over and creates the learner profile from the answers. */
+export const setJourneyLevel = (level: Level, levelScore: number, levelAnswers: (number | null)[] = []) =>
+  updateJourney((state) => ({
+    ...state,
+    level,
+    levelScore,
+    progress: {},
+    profile: initialProfile(level, levelAnswers),
+  }));
+
+export const setJourneyLanguage = (language: Language) => updateJourney((state) => ({ ...state, language }));
+
+/** Caches a prepared quiz so a reload shows it again without another request. */
+export const savePendingQuiz = (quiz: PersonalizedQuiz) =>
+  updateJourney((state) => {
+    const profile = state.profile ?? initialProfile(state.level ?? "intermediate");
+    const history = profile.history[quiz.stageId] ?? emptyHistory();
+    return { ...state, profile: { ...profile, history: { ...profile.history, [quiz.stageId]: { ...history, pending: quiz } } } };
+  });
+
+/** Records a graded quiz: gating progress plus the learner profile (mastery, difficulty, history). */
+export const recordQuizResult = (
+  stageId: string,
+  quiz: PersonalizedQuiz,
+  answers: (number | null)[],
+  grade: QuizGrade,
+) =>
+  updateJourney((state) => ({
+    ...state,
+    progress: recordAttempt(state.progress, stageId, grade),
+    profile: updateProfileAfterQuiz(
+      state.profile ?? initialProfile(state.level ?? "intermediate"),
+      stageId,
+      quiz,
+      answers,
+      grade,
+    ),
+  }));

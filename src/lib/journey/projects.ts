@@ -1,14 +1,19 @@
 import { normalizeText } from "@/lib/suggest/language";
 import { basicsStage, irrigationStages, parkingStages, trafficStages, type RawQuestion, type RawStage } from "./content";
 import { seededShuffle } from "./random";
-import type { LearningProject, LearningProjectId, Question, Quiz, Stage } from "./types";
+import type { Difficulty, LearningProject, LearningProjectId, Question, Quiz, Stage } from "./types";
 
 /** Builds a question whose options are shuffled deterministically; `options[0]` is correct. */
-export function buildQuestion(id: string, [skill, prompt, options, explanation]: RawQuestion): Question {
+export function buildQuestion(
+  id: string,
+  [skill, prompt, options, explanation]: RawQuestion,
+  difficulty: Difficulty = "medium",
+): Question {
   const order = seededShuffle([0, 1, 2, 3], id);
   return {
     id,
     skill,
+    difficulty,
     prompt,
     options: order.map((i) => options[i]!),
     correct: order.indexOf(0),
@@ -16,12 +21,24 @@ export function buildQuestion(id: string, [skill, prompt, options, explanation]:
   };
 }
 
-const buildQuiz = (stageId: string, version: number, raw: RawQuestion[]): Quiz => {
+const letter: Record<string, Difficulty> = { e: "easy", m: "medium", h: "hard" };
+
+const buildQuiz = (stageId: string, version: number, raw: RawQuestion[], levels: string): Quiz => {
   const id = `${stageId}-${version === 0 ? "a" : "b"}`;
-  return { id, questions: raw.map((q, i) => buildQuestion(`${id}-${i + 1}`, q)) };
+  return {
+    id,
+    questions: raw.map((q, i) => buildQuestion(`${id}-${i + 1}`, q, letter[levels[i] ?? "m"] ?? "medium")),
+  };
 };
 
 export function buildStage(raw: RawStage): Stage {
+  const quizzes: [Quiz, Quiz] = [
+    buildQuiz(raw.id, 0, raw.quizzes[0], raw.difficulty[0]),
+    buildQuiz(raw.id, 1, raw.quizzes[1], raw.difficulty[1]),
+  ];
+  const extra = raw.extra.map(([skill, prompt, options, explanation, difficulty], i) =>
+    buildQuestion(`${raw.id}-x-${i + 1}`, [skill, prompt, options, explanation], difficulty),
+  );
   return {
     id: raw.id,
     title: raw.title,
@@ -29,7 +46,8 @@ export function buildStage(raw: RawStage): Stage {
     explanation: raw.explanation,
     parts: raw.parts,
     mentor: raw.mentor,
-    quizzes: [buildQuiz(raw.id, 0, raw.quizzes[0]), buildQuiz(raw.id, 1, raw.quizzes[1])],
+    quizzes,
+    bank: [...quizzes[0].questions, ...quizzes[1].questions, ...extra],
     source: "written",
   };
 }

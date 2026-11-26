@@ -11,7 +11,7 @@ import { shortFunction } from "@/lib/suggest/catalogContext";
 import type { RawQuestion } from "./content";
 import { buildQuestion } from "./projects";
 import { seededShuffle } from "./random";
-import type { Bi, ProjectPart, Question, Quiz, Stage } from "./types";
+import type { Bi, Difficulty, ProjectPart, Question, Quiz, Stage } from "./types";
 
 const QUESTIONS_PER_QUIZ = 5;
 /** Inputs that the catalog files under "electronic parts". */
@@ -96,8 +96,29 @@ function generatedQuiz(stageId: string, version: number, items: CatalogComponent
   const general = seededShuffle(generalQuestions, `${id}-general`);
   // Mostly part-specific questions, always topped up with general ones to reach five.
   const chosen = [...specific.slice(0, QUESTIONS_PER_QUIZ - 1), ...general].slice(0, QUESTIONS_PER_QUIZ);
-  const questions: Question[] = chosen.map((raw, i) => buildQuestion(`${id}-${i + 1}`, raw));
+  const questions: Question[] = chosen.map((raw, i) => buildQuestion(`${id}-${i + 1}`, raw, difficultyOf(raw)));
   return { id, questions };
+}
+
+/** Generated questions get a difficulty from their kind. */
+const skillDifficulty: Record<string, Difficulty> = {
+  "Power requirements": "easy",
+  "Part categories": "easy",
+  "Ground connections": "medium",
+  "Pin functions": "hard",
+};
+const difficultyOf = (raw: RawQuestion): Difficulty => skillDifficulty[raw[0]] ?? "medium";
+
+/** Every part-specific and general question for the stage, without duplicate prompts. */
+function generatedBank(stageId: string, items: CatalogComponent[]): Question[] {
+  const raws = [
+    ...items.flatMap((item) => [0, 1].flatMap((v) => partQuestions(item, `${stageId}-${v === 0 ? "a" : "b"}-${item.key}`))),
+    ...generalQuestions,
+  ];
+  const seen = new Set<string>();
+  return raws
+    .filter((raw) => !seen.has(raw[1]) && seen.add(raw[1]))
+    .map((raw, i) => buildQuestion(`${stageId}-k-${i + 1}`, raw, difficultyOf(raw)));
 }
 
 function practiceTask(items: CatalogComponent[]) {
@@ -131,6 +152,7 @@ function generatedStage(id: string, title: Bi, items: CatalogComponent[]): Stage
       practiceTask: practiceTask(items),
     },
     quizzes: [generatedQuiz(id, 0, items), generatedQuiz(id, 1, items)],
+    bank: generatedBank(id, items),
     source: "generated",
   };
 }

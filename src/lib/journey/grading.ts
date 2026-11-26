@@ -32,10 +32,6 @@ export function stageStatuses(stages: Stage[], progress: Record<string, StagePro
 export const allPassed = (stages: Stage[], progress: Record<string, StageProgress>) =>
   stages.length > 0 && stages.every((stage) => progress[stage.id]?.passed);
 
-/** Version A first, version B after a failed attempt, then they alternate. */
-export const quizFor = (stage: Stage, progress?: StageProgress) =>
-  stage.quizzes[(progress?.attempts ?? 0) % 2]!;
-
 export function recordAttempt(
   progress: Record<string, StageProgress>,
   stageId: string,
