@@ -1,5 +1,6 @@
 import { Gauge, Languages, Lightbulb, Sparkles, Target, Wrench } from "lucide-react";
 import { difficultyLabel, masteryOf, stageSkills, whyThisQuiz } from "@/lib/journey/adaptive";
+import { skillLabel } from "@/lib/journey/i18n";
 import { setJourneyLanguage } from "@/lib/journey/store";
 import type { Language, LearnerProfile, PersonalizedQuiz, Stage } from "@/lib/journey/types";
 import type { FallbackReason } from "@/lib/suggest/types";
@@ -36,7 +37,9 @@ export function PersonalSourceLabel({ quiz }: { quiz: PersonalizedQuiz }) {
 export function WhyThisQuizCard({ quiz }: { quiz: PersonalizedQuiz }) {
   const why = whyThisQuiz(quiz.plan);
   const fallback = quiz.fallbackReason ? quizFallbackReasons[quiz.fallbackReason] : null;
-  const dir = quiz.source === "ai" && quiz.language === "ar" ? "rtl" : "ltr";
+  // Local and Gemini content are both written in the quiz's language.
+  const dir = quiz.language === "ar" ? "rtl" : "ltr";
+  const lang = quiz.language;
   return (
     <section className="glass-panel rounded-[22px] p-5" aria-label="Why this quiz">
       <div className="flex flex-wrap items-center gap-2">
@@ -48,20 +51,22 @@ export function WhyThisQuizCard({ quiz }: { quiz: PersonalizedQuiz }) {
           <Gauge size={12} /> {difficultyLabel(quiz.plan.difficulty).en} · {difficultyLabel(quiz.plan.difficulty).ar}
         </span>
       </div>
-      <p className="mt-2 text-sm">{why.en}</p>
-      <p dir="rtl" className="text-sm text-muted-foreground">
-        {why.ar}
+      <p dir={dir} className="mt-2 text-sm">
+        {why[lang]}
+      </p>
+      <p dir={lang === "ar" ? "ltr" : "rtl"} className="text-xs text-muted-foreground">
+        {why[lang === "ar" ? "en" : "ar"]}
       </p>
       {!!quiz.plan.focusSkills.length && (
         <ul className="mt-2 flex flex-wrap gap-1.5" aria-label="Focus skills">
           {quiz.plan.focusSkills.map((skill) => (
             <li key={skill} className="rounded-full bg-soft-amber px-2.5 py-0.5 text-[11px] font-semibold">
-              {skill}
+              {skillLabel(skill, lang)}
             </li>
           ))}
           {quiz.plan.reviewSkill && (
             <li className="rounded-full bg-soft-rose px-2.5 py-0.5 text-[11px] font-semibold">
-              Review: {quiz.plan.reviewSkill}
+              {lang === "ar" ? "مراجعة" : "Review"}: {skillLabel(quiz.plan.reviewSkill, lang)}
             </li>
           )}
         </ul>
@@ -87,11 +92,6 @@ export function WhyThisQuizCard({ quiz }: { quiz: PersonalizedQuiz }) {
       <p dir={dir} className="mt-1 text-sm">
         {quiz.practiceTask}
       </p>
-      {quiz.source === "local" && (
-        <p className="mt-2 text-[10px] text-muted-foreground">
-          Local content is prewritten in English. AI-generated content follows the language setting.
-        </p>
-      )}
     </section>
   );
 }
@@ -100,10 +100,12 @@ export function WhyThisQuizCard({ quiz }: { quiz: PersonalizedQuiz }) {
 export function SkillsPanel({
   profile,
   stages,
+  language,
   title = "Your skills",
 }: {
   profile: LearnerProfile | null;
   stages: Stage[];
+  language: Language;
   title?: string;
 }) {
   if (!profile) return null;
@@ -127,7 +129,7 @@ export function SkillsPanel({
             return (
               <li key={skill} className="text-xs">
                 <div className="flex justify-between">
-                  <span>{skill}</span>
+                  <span dir={language === "ar" ? "rtl" : "ltr"}>{skillLabel(skill, language)}</span>
                   <span className="font-mono">{value}</span>
                 </div>
                 <div className="mt-1 h-2 overflow-hidden rounded-full bg-muted" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={value} aria-label={`${skill} mastery`}>

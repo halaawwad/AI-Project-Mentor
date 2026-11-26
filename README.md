@@ -114,8 +114,10 @@ All suggestions go through `suggestParts(description)` in `src/lib/suggest/index
   starts with a "Why this quiz" card. The path page shows mastery bars and the current difficulty.
 - **Demo learners:** a "Student A / Student B" switch keeps two separate journeys, to show different
   quizzes on the same stage. Reset demo clears both.
-- **Language:** Arabic by default (technical terms stay in English), switchable on the path page.
-  Local content is prewritten in English.
+- **Language:** Arabic (RTL) by default, with technical terms and pin names kept in English. The
+  Arabic/English toggle is in the header of every journey screen. All local content (lessons, the
+  full question bank, level check, mentor text, practice tasks, generated paths, skill names) is
+  written in both languages.
 
 ### Learning journey (demo content)
 
@@ -133,8 +135,8 @@ All suggestions go through `suggestParts(description)` in `src/lib/suggest/index
 
 ## Limitations
 
-- Lesson text and local quiz content are in English, with Arabic titles and labels. Only Gemini
-  quizzes and explanations follow the Arabic/English setting.
+- The interface labels (buttons, headings) stay bilingual side by side; only the learning content
+  switches language. The catalog, BOM and 3D Lab screens are unchanged.
 - Gemini answers are checked for structure, repeats, skills and part names, but their technical
   accuracy can't be fully verified automatically. Reworded repeats aren't detected; only exact
   repeats after normalization are.

@@ -1,13 +1,18 @@
 import { normalizeText } from "@/lib/suggest/language";
 import { basicsStage, irrigationStages, parkingStages, trafficStages, type RawQuestion, type RawStage } from "./content";
+import { arabicStages, type ArQuestion } from "./content.ar";
 import { seededShuffle } from "./random";
 import type { Difficulty, LearningProject, LearningProjectId, Question, Quiz, Stage } from "./types";
 
-/** Builds a question whose options are shuffled deterministically; `options[0]` is correct. */
+/**
+ * Builds a question whose options are shuffled deterministically; `options[0]` is correct.
+ * Arabic options (same source order) get the same permutation, so `correct` holds for both.
+ */
 export function buildQuestion(
   id: string,
   [skill, prompt, options, explanation]: RawQuestion,
   difficulty: Difficulty = "medium",
+  ar?: ArQuestion,
 ): Question {
   const order = seededShuffle([0, 1, 2, 3], id);
   return {
@@ -18,26 +23,35 @@ export function buildQuestion(
     options: order.map((i) => options[i]!),
     correct: order.indexOf(0),
     explanation,
+    ...(ar ? { ar: { prompt: ar[0], options: order.map((i) => ar[1][i]!), explanation: ar[2] } } : {}),
   };
 }
 
 const letter: Record<string, Difficulty> = { e: "easy", m: "medium", h: "hard" };
 
-const buildQuiz = (stageId: string, version: number, raw: RawQuestion[], levels: string): Quiz => {
+const buildQuiz = (stageId: string, version: number, raw: RawQuestion[], levels: string, ar: ArQuestion[]): Quiz => {
   const id = `${stageId}-${version === 0 ? "a" : "b"}`;
   return {
     id,
-    questions: raw.map((q, i) => buildQuestion(`${id}-${i + 1}`, q, letter[levels[i] ?? "m"] ?? "medium")),
+    questions: raw.map((q, i) => buildQuestion(`${id}-${i + 1}`, q, letter[levels[i] ?? "m"] ?? "medium", ar[i])),
   };
 };
 
 export function buildStage(raw: RawStage): Stage {
+  const ar = arabicStages[raw.id];
+  if (
+    !ar ||
+    ar.quizzes[0].length !== raw.quizzes[0].length ||
+    ar.quizzes[1].length !== raw.quizzes[1].length ||
+    ar.extra.length !== raw.extra.length
+  )
+    throw new Error(`Arabic content for stage "${raw.id}" is missing or doesn't match the English.`);
   const quizzes: [Quiz, Quiz] = [
-    buildQuiz(raw.id, 0, raw.quizzes[0], raw.difficulty[0]),
-    buildQuiz(raw.id, 1, raw.quizzes[1], raw.difficulty[1]),
+    buildQuiz(raw.id, 0, raw.quizzes[0], raw.difficulty[0], ar.quizzes[0]),
+    buildQuiz(raw.id, 1, raw.quizzes[1], raw.difficulty[1], ar.quizzes[1]),
   ];
   const extra = raw.extra.map(([skill, prompt, options, explanation, difficulty], i) =>
-    buildQuestion(`${raw.id}-x-${i + 1}`, [skill, prompt, options, explanation], difficulty),
+    buildQuestion(`${raw.id}-x-${i + 1}`, [skill, prompt, options, explanation], difficulty, ar.extra[i]),
   );
   return {
     id: raw.id,
@@ -46,6 +60,7 @@ export function buildStage(raw: RawStage): Stage {
     explanation: raw.explanation,
     parts: raw.parts,
     mentor: raw.mentor,
+    ar: { goal: ar.goal, explanation: ar.explanation, mentor: ar.mentor },
     quizzes,
     bank: [...quizzes[0].questions, ...quizzes[1].questions, ...extra],
     source: "written",
@@ -73,7 +88,10 @@ export const learningProjects: LearningProject[] = [
       { key: "push_button", quantity: 1 },
       { key: "resistor_10k", quantity: 1 },
     ],
-    note: "The catalog has no yellow LED, so the RGB LED mixes red and green to show amber.",
+    note: {
+      en: "The catalog has no yellow LED, so the RGB LED mixes red and green to show amber.",
+      ar: "لا يوجد LED أصفر في الكتالوج، لذا يمزج الـRGB LED الأحمر والأخضر لإظهار اللون الكهرماني.",
+    },
     stages: trafficStages.map(buildStage),
   },
   {

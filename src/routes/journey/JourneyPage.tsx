@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, CircleDot, Lock, PackageSearch, Trophy } from "lucide-react";
 import { DemoBadge, JourneyLayout, ResetDemoButton } from "@/components/journey/JourneyUi";
-import { LanguageToggle, SkillsPanel } from "@/components/journey/Personalization";
+import { SkillsPanel } from "@/components/journey/Personalization";
 import { Button } from "@/components/ui/button";
 import { allPassed, stageStatuses } from "@/lib/journey/grading";
 import { levelInfo } from "@/lib/journey/level";
@@ -14,6 +14,7 @@ import { useDocumentTitle } from "@/lib/useDocumentTitle";
 export function JourneyPage() {
   useDocumentTitle("Learning journey | AiPM");
   const journey = useJourney();
+  const lang = journey.language;
   const stages = buildPath(journey);
   const statuses = stageStatuses(stages, journey.progress);
   const done = allPassed(stages, journey.progress);
@@ -60,24 +61,28 @@ export function JourneyPage() {
       actions={
         <div className="flex flex-wrap items-center gap-2">
           <DemoBadge generated={generated} />
-          <LanguageToggle language={journey.language} />
           <ResetDemoButton />
         </div>
       }
     >
-      <SkillsPanel profile={journey.profile} stages={stages} />
+      <SkillsPanel profile={journey.profile} stages={stages} language={lang} />
       <section className="glass-panel rounded-[22px] p-5">
-        <p className="text-sm">
-          {stages.length} stages · pass each quiz with {PASS_MARK}% or more to unlock the next stage.{" "}
-          {levelInfo[journey.level].path}
-        </p>
-        <p dir="rtl" className="text-xs text-muted-foreground">
-          اجتز اختبار كل مرحلة بنسبة {PASS_MARK}% أو أكثر لفتح المرحلة التالية.
-        </p>
+        {lang === "ar" ? (
+          <p dir="rtl" className="text-sm">
+            {stages.length} مراحل · اجتز اختبار كل مرحلة بنسبة {PASS_MARK}% أو أكثر لفتح المرحلة التالية.{" "}
+            {levelInfo[journey.level].path.ar}
+          </p>
+        ) : (
+          <p className="text-sm">
+            {stages.length} stages · pass each quiz with {PASS_MARK}% or more to unlock the next stage.{" "}
+            {levelInfo[journey.level].path.en}
+          </p>
+        )}
         {generated && (
-          <p className="mt-2 text-[11px] text-muted-foreground">
-            No written path matches this project, so the stages and quizzes are generated from your
-            approved parts using catalog and connection-sheet data.
+          <p dir={lang === "ar" ? "rtl" : "ltr"} className="mt-2 text-[11px] text-muted-foreground">
+            {lang === "ar"
+              ? "لا يوجد مسار مكتوب يطابق هذا المشروع، لذا وُلّدت المراحل والاختبارات من القطع المعتمدة باستخدام بيانات الكتالوج وأوراق التوصيل."
+              : "No written path matches this project, so the stages and quizzes are generated from your approved parts using catalog and connection-sheet data."}
           </p>
         )}
         <ol className="mt-4 space-y-2">
@@ -95,9 +100,11 @@ export function JourneyPage() {
                   <p className="text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
                     STAGE {i + 1} · {status.toUpperCase()}
                   </p>
-                  <strong className="text-sm">{stage.title.en}</strong>{" "}
-                  <span dir="rtl" className="text-xs text-muted-foreground">
-                    · {stage.title.ar}
+                  <strong dir={lang === "ar" ? "rtl" : "ltr"} className="text-sm">
+                    {stage.title[lang]}
+                  </strong>{" "}
+                  <span dir={lang === "ar" ? "ltr" : "rtl"} className="text-xs text-muted-foreground">
+                    · {stage.title[lang === "ar" ? "en" : "ar"]}
                   </span>
                 </div>
                 <span className="text-xs text-muted-foreground">

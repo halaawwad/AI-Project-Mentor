@@ -3,6 +3,7 @@ import { useState } from "react";
 import { ArrowRight, Gauge } from "lucide-react";
 import { DemoBadge, JourneyLayout } from "@/components/journey/JourneyUi";
 import { Button } from "@/components/ui/button";
+import { questionDir, questionText } from "@/lib/journey/i18n";
 import { levelInfo, levelQuestions, scoreLevel, selfRatings } from "@/lib/journey/level";
 import { setJourneyLevel, useJourney } from "@/lib/journey/store";
 import type { Level } from "@/lib/journey/types";
@@ -13,6 +14,7 @@ export function LevelPage() {
   useDocumentTitle("Level check | AiPM");
   const navigate = useNavigate();
   const journey = useJourney();
+  const lang = journey.language;
   const [rating, setRating] = useState<number | null>(null),
     [answers, setAnswers] = useState<(number | null)[]>(levelQuestions.map(() => null)),
     [result, setResult] = useState<{ level: Level; score: number; correct: number } | null>(null);
@@ -76,12 +78,12 @@ export function LevelPage() {
 
       <section className="glass-panel space-y-4 rounded-[22px] p-5" aria-label="Quick questions">
         {levelQuestions.map((question, qi) => (
-          <fieldset key={question.id}>
+          <fieldset key={question.id} dir={questionDir(question, lang)}>
             <legend className="text-sm font-bold">
-              {qi + 2}. {question.prompt}
+              {qi + 2}. {questionText(question, lang).prompt}
             </legend>
             <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
-              {question.options.map((option, oi) => (
+              {questionText(question, lang).options.map((option, oi) => (
                 <label
                   key={oi}
                   className={`glass-inset flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm ${answers[qi] === oi ? "ring-2 ring-primary" : ""}`}
@@ -117,7 +119,9 @@ export function LevelPage() {
               · {levelInfo[result.level].title.ar}
             </span>
           </h2>
-          <p className="mt-2 text-sm">{levelInfo[result.level].path}</p>
+          <p dir={lang === "ar" ? "rtl" : "ltr"} className="mt-2 text-sm">
+            {levelInfo[result.level].path[lang]}
+          </p>
           <Button
             className="mt-4"
             onClick={() => {

@@ -1,5 +1,6 @@
 import { normalizeText } from "@/lib/suggest/language";
 import type { QuizGrade } from "./grading";
+import { questionText, skillLabel, stageText } from "./i18n";
 import { levelQuestions } from "./level";
 import { hashSeed } from "./random";
 import {
@@ -7,6 +8,7 @@ import {
   PASS_MARK,
   type Bi,
   type Difficulty,
+  type Language,
   type LearnerProfile,
   type Level,
   type PersonalizedQuiz,
@@ -197,11 +199,17 @@ export function selectLocalQuestions(
 }
 
 /** Prewritten explanation for the weakest skill: the bank's notes on it plus the stage analogy. */
-export function localExplanation(stages: Stage[], index: number, plan: QuizPlan) {
+export function localExplanation(stages: Stage[], index: number, plan: QuizPlan, language: Language = "en") {
   const stage = stages[index]!;
   const skill = plan.focusSkills[0] ?? plan.reviewSkill ?? stageSkills(stage)[0] ?? "";
-  const notes = unique(stages.slice(0, index + 1).flatMap((s) => s.bank).filter((q) => q.skill === skill).map((q) => q.explanation)).slice(0, 3);
-  return `${skill}: ${notes.join(" ")} ${stage.mentor.alternative}`.trim();
+  const notes = unique(
+    stages
+      .slice(0, index + 1)
+      .flatMap((s) => s.bank)
+      .filter((q) => q.skill === skill)
+      .map((q) => questionText(q, language).explanation),
+  ).slice(0, 3);
+  return `${skillLabel(skill, language)}: ${notes.join(" ")} ${stageText(stage, language).mentor.alternative}`.trim();
 }
 
 export function buildLocalQuiz(
@@ -221,8 +229,8 @@ export function buildLocalQuiz(
     source: "local",
     plan,
     language,
-    explanation: localExplanation(stages, index, plan),
-    practiceTask: stage.mentor.practiceTask,
+    explanation: localExplanation(stages, index, plan, language),
+    practiceTask: stageText(stage, language).mentor.practiceTask,
     questions: selectLocalQuestions(stages, index, plan, profile, `${learnerId}-${stage.id}-${attempt}`),
   };
 }
@@ -237,34 +245,36 @@ export const difficultyLabel = (d: Difficulty) => difficultyName[d];
 /** The "Why this quiz" sentence, in English and Arabic. */
 export function whyThisQuiz(plan: QuizPlan): Bi {
   const list = plan.focusSkills.join(" and ") || "this stage's skills";
+  const listAr = plan.focusSkills.map((s) => skillLabel(s, "ar")).join(" و") || "مهارات هذه المرحلة";
+  const reviewAr = plan.reviewSkill ? skillLabel(plan.reviewSkill, "ar") : "";
   const d = difficultyName[plan.difficulty];
   switch (plan.kind) {
     case "retry":
       return {
         en: `Focuses on ${list} because you missed ${plan.focusSkills.length > 1 ? "them" : "it"} last time${plan.easier ? ", one step easier" : ""}; difficulty: ${d.en}.`,
-        ar: `يركّز على ${list} لأنك أخطأت فيها في المحاولة السابقة${plan.easier ? "، بمستوى أسهل بدرجة" : ""}؛ الصعوبة: ${d.ar}.`,
+        ar: `يركّز على ${listAr} لأنك أخطأت فيها في المحاولة السابقة${plan.easier ? "، بمستوى أسهل بدرجة" : ""}؛ الصعوبة: ${d.ar}.`,
       };
     case "next-stage": {
       const review = plan.reviewSkill
-        ? { en: `, plus ${plan.reviewCount} review question${plan.reviewCount > 1 ? "s" : ""} on ${plan.reviewSkill}, your weakest skill so far`, ar: `، مع ${plan.reviewCount === 1 ? "سؤال مراجعة واحد" : "سؤالي مراجعة"} عن ${plan.reviewSkill}، أضعف مهاراتك حتى الآن` }
+        ? { en: `, plus ${plan.reviewCount} review question${plan.reviewCount > 1 ? "s" : ""} on ${plan.reviewSkill}, your weakest skill so far`, ar: `، مع ${plan.reviewCount === 1 ? "سؤال مراجعة واحد" : "سؤالَي مراجعة"} عن ${reviewAr}، أضعف مهاراتك حتى الآن` }
         : { en: "", ar: "" };
       const raised = plan.raised
         ? { en: " You scored 100% on your first try last stage, so the difficulty went up.", ar: " حصلت على 100% من المحاولة الأولى في المرحلة السابقة، لذلك ارتفعت الصعوبة." }
         : { en: "", ar: "" };
       return {
         en: `Starts with ${list}, your lowest mastery in this stage${review.en}; difficulty: ${d.en}.${raised.en}`,
-        ar: `يبدأ بـ ${list}، الأقل إتقاناً لديك في هذه المرحلة${review.ar}؛ الصعوبة: ${d.ar}.${raised.ar}`,
+        ar: `يبدأ بـ${listAr}، الأقل إتقاناً لديك في هذه المرحلة${review.ar}؛ الصعوبة: ${d.ar}.${raised.ar}`,
       };
     }
     case "practice":
       return {
         en: `A practice round on ${list}, your lowest mastery here; difficulty: ${d.en}.`,
-        ar: `جولة تدريب على ${list}، الأقل إتقاناً لديك هنا؛ الصعوبة: ${d.ar}.`,
+        ar: `جولة تدريب على ${listAr}، الأقل إتقاناً لديك هنا؛ الصعوبة: ${d.ar}.`,
       };
     default:
       return {
         en: `Starts with ${list}, your lowest mastery in this stage so far (from your level check and answers); difficulty: ${d.en}.`,
-        ar: `يبدأ بـ ${list}، الأقل إتقاناً لديك في هذه المرحلة حتى الآن (حسب تحديد المستوى وإجاباتك)؛ الصعوبة: ${d.ar}.`,
+        ar: `يبدأ بـ${listAr}، الأقل إتقاناً لديك في هذه المرحلة حتى الآن (حسب تحديد المستوى وإجاباتك)؛ الصعوبة: ${d.ar}.`,
       };
   }
 }

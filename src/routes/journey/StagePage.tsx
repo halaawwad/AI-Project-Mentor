@@ -30,7 +30,9 @@ import {
   useActiveLearner,
   useJourney,
 } from "@/lib/journey/store";
-import { PASS_MARK, type PersonalizedQuiz, type Stage } from "@/lib/journey/types";
+import { difficultyLabel } from "@/lib/journey/adaptive";
+import { questionDir, questionText, skillLabel, stageText } from "@/lib/journey/i18n";
+import { PASS_MARK, type Language, type PersonalizedQuiz, type Question, type Stage } from "@/lib/journey/types";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 type Phase = "learn" | "preparing" | "brief" | "quiz" | "result";
@@ -121,7 +123,11 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
     setPhase("result");
     requestAnimationFrame(() => document.getElementById("stage-result")?.scrollIntoView({ block: "start" }));
   };
-  const dir = quiz?.source === "ai" && quiz.language === "ar" ? "rtl" : "ltr";
+  const lang = journey.language;
+  const lesson = stageText(stage, lang);
+  const lessonDir = lang === "ar" ? "rtl" : "ltr";
+  // Local questions carry both languages; Gemini questions are in the quiz's own language.
+  const shown = (question: Question) => questionText(question, lang);
 
   return (
     <JourneyLayout
@@ -135,11 +141,15 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
         <h2 className="flex items-center gap-2 text-sm font-bold">
           <Target size={16} /> Goal <span dir="rtl" className="font-normal">· الهدف</span>
         </h2>
-        <p className="mt-1 text-sm">{stage.goal}</p>
+        <p dir={lessonDir} className="mt-1 text-sm">
+          {lesson.goal}
+        </p>
         <h2 className="mt-4 flex items-center gap-2 text-sm font-bold">
           <BookOpen size={16} /> Explanation <span dir="rtl" className="font-normal">· الشرح</span>
         </h2>
-        <p className="mt-1 max-w-4xl text-sm leading-7">{stage.explanation}</p>
+        <p dir={lessonDir} className="mt-1 max-w-4xl text-sm leading-7">
+          {lesson.explanation}
+        </p>
         {journey.level === "advanced" && !progress?.passed && (
           <p className="mt-2 text-[11px] text-muted-foreground">Advanced level: you can go straight to the quiz.</p>
         )}
@@ -188,15 +198,15 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
             <PersonalSourceLabel quiz={quiz} />
           </div>
           {quiz.questions.map((question, qi) => (
-            <fieldset key={question.id} dir={dir}>
+            <fieldset key={question.id} dir={questionDir(question, lang)}>
               <legend className="text-sm font-semibold">
-                {qi + 1}. {question.prompt}{" "}
-                <span className="text-[10px] font-normal text-muted-foreground" dir="ltr">
-                  [{question.skill} · {question.difficulty}]
+                {qi + 1}. {shown(question).prompt}{" "}
+                <span className="text-[10px] font-normal text-muted-foreground">
+                  [{skillLabel(question.skill, lang)} · {difficultyLabel(question.difficulty)[lang]}]
                 </span>
               </legend>
               <div className="mt-2 grid gap-1.5 md:grid-cols-2">
-                {question.options.map((option, oi) => (
+                {shown(question).options.map((option, oi) => (
                   <label
                     key={oi}
                     className={`glass-inset flex cursor-pointer items-start gap-2 rounded-lg px-3 py-2 text-sm ${answers[qi] === oi ? "ring-2 ring-primary" : ""}`}
@@ -238,17 +248,17 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
             </p>
             <ol className="mt-3 space-y-2">
               {quiz.questions.map((question, qi) => (
-                <li key={question.id} dir={dir} className="glass-inset rounded-lg p-3 text-sm">
+                <li key={question.id} dir={questionDir(question, lang)} className="glass-inset rounded-lg p-3 text-sm">
                   <p className="font-semibold">
-                    {grade.results[qi] ? "✓" : "✗"} {question.prompt}
+                    {grade.results[qi] ? "✓" : "✗"} {shown(question).prompt}
                   </p>
                   {!grade.results[qi] && (
                     <p className="text-xs">
-                      {answers[qi] !== null && <>✗ {question.options[answers[qi] ?? -1]} · </>}✓{" "}
-                      <strong>{question.options[question.correct]}</strong>
+                      {answers[qi] !== null && <>✗ {shown(question).options[answers[qi] ?? -1]} · </>}✓{" "}
+                      <strong>{shown(question).options[question.correct]}</strong>
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground">{question.explanation}</p>
+                  <p className="text-xs text-muted-foreground">{shown(question).explanation}</p>
                 </li>
               ))}
             </ol>
@@ -273,7 +283,9 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
               </div>
             )}
           </div>
-          {!grade.passed && <MentorPanel stage={stage} quiz={quiz} grade={grade} onNext={() => void prepare()} />}
+          {!grade.passed && (
+            <MentorPanel stage={stage} quiz={quiz} grade={grade} language={lang} onNext={() => void prepare()} />
+          )}
         </section>
       )}
     </JourneyLayout>
@@ -284,14 +296,17 @@ function MentorPanel({
   stage,
   quiz,
   grade,
+  language,
   onNext,
 }: {
   stage: Stage;
   quiz: PersonalizedQuiz;
   grade: QuizGrade;
+  language: Language;
   onNext: () => void;
 }) {
   const feedback = mentorFeedback(stage, quiz, grade);
+  const dir = language === "ar" ? "rtl" : "ltr";
   return (
     <div className="glass-panel rounded-[22px] p-5" aria-label="Mentor feedback">
       <h2 className="flex items-center gap-2 text-base font-bold">
@@ -303,22 +318,26 @@ function MentorPanel({
             <ThumbsUp size={14} /> Strengths <span dir="rtl" className="font-normal">· نقاط القوة</span>
           </h3>
           {feedback.strengths.length ? (
-            <ul className="mt-1 list-disc ps-5 text-sm">
+            <ul dir={dir} className="mt-1 list-disc ps-5 text-sm">
               {feedback.strengths.map((skill) => (
-                <li key={skill}>{skill}</li>
+                <li key={skill}>{skillLabel(skill, language)}</li>
               ))}
             </ul>
           ) : (
-            <p className="mt-1 text-sm text-muted-foreground">No skill fully secured yet — that's what the next quiz is for.</p>
+            <p dir={dir} className="mt-1 text-sm text-muted-foreground">
+              {language === "ar"
+                ? "لم تُتقن أي مهارة بالكامل بعد، وهذا ما سيساعدك عليه الاختبار التالي."
+                : "No skill fully secured yet — that's what the next quiz is for."}
+            </p>
           )}
         </div>
         <div className="glass-inset rounded-xl p-3">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">
             <Target size={14} /> Weak points <span dir="rtl" className="font-normal">· نقاط تحتاج تحسيناً</span>
           </h3>
-          <ul className="mt-1 list-disc ps-5 text-sm">
+          <ul dir={dir} className="mt-1 list-disc ps-5 text-sm">
             {feedback.weakPoints.map((skill) => (
-              <li key={skill}>{skill}</li>
+              <li key={skill}>{skillLabel(skill, language)}</li>
             ))}
           </ul>
         </div>

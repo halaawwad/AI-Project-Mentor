@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { addManyToBom } from "@/lib/componentCatalog";
 import { usePartPreviews } from "@/lib/lab/usePartPreviews";
 import { learningProjects } from "@/lib/journey/projects";
-import { startLearningJourney } from "@/lib/journey/store";
+import { startLearningJourney, useJourney } from "@/lib/journey/store";
 import type { LearningProjectId } from "@/lib/journey/types";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
@@ -17,6 +17,10 @@ export function ChooseProjectPage() {
   const navigate = useNavigate();
   const previews = usePartPreviews();
   const [notice, setNotice] = useState("");
+  const lang = useJourney().language;
+  const other = lang === "ar" ? "en" : "ar";
+  const dir = lang === "ar" ? "rtl" : "ltr";
+  const otherDir = lang === "ar" ? "ltr" : "rtl";
 
   const start = (id: LearningProjectId) => {
     const project = learningProjects.find((p) => p.id === id)!;
@@ -56,17 +60,21 @@ export function ChooseProjectPage() {
               {String(index + 1).padStart(2, "0")} · {project.difficulty.en.toUpperCase()}{" "}
               <span dir="rtl">· {project.difficulty.ar}</span>
             </span>
-            <h2 className="mt-1 text-lg font-bold">{project.title.en}</h2>
-            <p dir="rtl" className="text-sm text-muted-foreground">
-              {project.title.ar}
+            <h2 dir={dir} className="mt-1 text-lg font-bold">
+              {project.title[lang]}
+            </h2>
+            <p dir={otherDir} className="text-sm text-muted-foreground">
+              {project.title[other]}
             </p>
-            <p className="mt-2 text-sm leading-6">{project.summary.en}</p>
-            <p dir="rtl" className="text-xs leading-6 text-muted-foreground">
-              {project.summary.ar}
+            <p dir={dir} className="mt-2 text-sm leading-6">
+              {project.summary[lang]}
+            </p>
+            <p dir={otherDir} className="text-xs leading-6 text-muted-foreground">
+              {project.summary[other]}
             </p>
             {project.note && (
-              <p className="mt-2 flex gap-1.5 text-[11px] text-muted-foreground">
-                <Info size={13} className="mt-0.5 shrink-0" /> {project.note}
+              <p dir={dir} className="mt-2 flex gap-1.5 text-[11px] text-muted-foreground">
+                <Info size={13} className="mt-0.5 shrink-0" /> {project.note[lang]}
               </p>
             )}
             <p className="mt-3 text-xs font-semibold">

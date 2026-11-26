@@ -4,7 +4,8 @@ import { Check, Menu, RotateCcw, UserRound } from "lucide-react";
 import { AppSidebar, type AppSection } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { journeySteps, type JourneyStepId } from "@/lib/journey/path";
-import { LEARNERS, resetDemo, switchLearner, useActiveLearner } from "@/lib/journey/store";
+import { LanguageToggle } from "@/components/journey/Personalization";
+import { LEARNERS, resetDemo, switchLearner, useActiveLearner, useJourney } from "@/lib/journey/store";
 
 /** Demo control: two learners with separate journeys, to show that quizzes differ per student. */
 export function LearnerSwitch() {
@@ -111,6 +112,7 @@ export function JourneyLayout({
   children: ReactNode;
 }) {
   const [menu, setMenu] = useState(false);
+  const journey = useJourney();
   return (
     <div className="dashboard-background catalog-background min-h-screen">
       <div className="mx-auto flex max-w-[1800px] gap-4 p-3 lg:p-4">
@@ -132,6 +134,7 @@ export function JourneyLayout({
             <div className="min-w-0 flex-1">
               <JourneyIndicator current={step} />
             </div>
+            <LanguageToggle language={journey.language} />
             <LearnerSwitch />
           </div>
           <header className="glass-panel flex flex-wrap items-center gap-3 rounded-[22px] p-5">

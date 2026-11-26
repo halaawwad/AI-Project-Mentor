@@ -16,6 +16,8 @@ export interface Question {
   /** Index of the correct option in `options`. */
   correct: number;
   explanation: string;
+  /** Arabic text for local questions, with options in the same order (same `correct`). */
+  ar?: { prompt: string; options: string[]; explanation: string };
 }
 
 export interface Quiz {
@@ -35,6 +37,8 @@ export interface Stage {
   /** Every local question for this stage, skill- and difficulty-tagged. */
   bank: Question[];
   mentor: { alternative: string; practiceTask: string };
+  /** Arabic lesson text (English stays in the fields above). */
+  ar: { goal: string; explanation: string; mentor: { alternative: string; practiceTask: string } };
   /** `written`: prewritten lesson. `generated`: built from catalog and component-sheet data. */
   source: "written" | "generated";
 }
@@ -53,7 +57,7 @@ export interface LearningProject {
   difficulty: Bi;
   parts: ProjectPart[];
   stages: Stage[];
-  note?: string;
+  note?: Bi;
 }
 
 export interface StageProgress {

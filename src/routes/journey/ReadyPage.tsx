@@ -6,6 +6,7 @@ import { SkillsPanel } from "@/components/journey/Personalization";
 import { Button } from "@/components/ui/button";
 import { usePartPreviews } from "@/lib/lab/usePartPreviews";
 import { allPassed, skillsOf, stageStatuses } from "@/lib/journey/grading";
+import { skillLabel } from "@/lib/journey/i18n";
 import { levelInfo } from "@/lib/journey/level";
 import { buildPath } from "@/lib/journey/path";
 import { useJourney } from "@/lib/journey/store";
@@ -38,6 +39,8 @@ export function ReadyPage() {
   }
 
   const skills = skillsOf(stages);
+  const lang = journey.language;
+  const dir = lang === "ar" ? "rtl" : "ltr";
   const units = journey.parts.reduce((sum, part) => sum + part.quantity, 0);
   return (
     <JourneyLayout
@@ -53,12 +56,13 @@ export function ReadyPage() {
       }
     >
       <section className="glass-panel glass-strong rounded-[28px] p-6">
-        <p className="flex items-center gap-2 text-xl font-bold">
-          <PartyPopper className="text-primary" /> {journey.project.title.en}
+        <p dir={dir} className="flex items-center gap-2 text-xl font-bold">
+          <PartyPopper className="text-primary" /> {journey.project.title[lang]}
         </p>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Level: {levelInfo[journey.level].title.en} · {stages.length} stages passed · {units} units in
-          your parts list
+        <p dir={dir} className="mt-1 text-sm text-muted-foreground">
+          {lang === "ar"
+            ? `المستوى: ${levelInfo[journey.level].title.ar} · اجتزت ${stages.length} مراحل · ${units} قطعة في قائمتك`
+            : `Level: ${levelInfo[journey.level].title.en} · ${stages.length} stages passed · ${units} units in your parts list`}
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
           <Button asChild>
@@ -73,16 +77,16 @@ export function ReadyPage() {
           </Button>
         </div>
       </section>
-      <SkillsPanel profile={journey.profile} stages={stages} title="Final mastery per skill" />
+      <SkillsPanel profile={journey.profile} stages={stages} language={lang} title="Final mastery per skill" />
       <div className="grid gap-4 xl:grid-cols-2">
         <section className="glass-panel rounded-[22px] p-5" aria-label="Skills learned">
           <h2 className="text-sm font-bold">
             Skills learned <span dir="rtl" className="font-normal">· المهارات المكتسبة</span>
           </h2>
-          <ul className="mt-2 flex flex-wrap gap-1.5">
+          <ul dir={dir} className="mt-2 flex flex-wrap gap-1.5">
             {skills.map((skill) => (
               <li key={skill} className="flex items-center gap-1 rounded-full bg-mint px-2.5 py-1 text-xs text-mint-foreground">
-                <CheckCircle2 size={12} /> {skill}
+                <CheckCircle2 size={12} /> {skillLabel(skill, lang)}
               </li>
             ))}
           </ul>
@@ -93,12 +97,14 @@ export function ReadyPage() {
             {stages.map((stage, i) => {
               const progress = journey.progress[stage.id]!;
               return (
-                <li key={stage.id} className="flex justify-between gap-2">
+                <li key={stage.id} dir={dir} className="flex justify-between gap-2">
                   <span>
-                    {i + 1}. {stage.title.en}
+                    {i + 1}. {stage.title[lang]}
                   </span>
                   <span className="text-muted-foreground">
-                    {progress.bestScore}% · {progress.attempts} attempt{progress.attempts === 1 ? "" : "s"}
+                    {lang === "ar"
+                      ? `${progress.bestScore}% · ${progress.attempts} ${progress.attempts === 1 ? "محاولة" : "محاولات"}`
+                      : `${progress.bestScore}% · ${progress.attempts} attempt${progress.attempts === 1 ? "" : "s"}`}
                   </span>
                 </li>
               );
