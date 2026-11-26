@@ -11,6 +11,12 @@ import { LocalStorageNotice } from "@/components/LocalStorageNotice";
 import { BomPage } from "@/routes/BomPage";
 import { CatalogPage } from "@/routes/CatalogPage";
 import { DescribePage } from "@/routes/DescribePage";
+import { ChooseProjectPage } from "@/routes/journey/ChooseProjectPage";
+import { JourneyPage } from "@/routes/journey/JourneyPage";
+import { LevelPage } from "@/routes/journey/LevelPage";
+import { NewComponentPage } from "@/routes/journey/NewComponentPage";
+import { ReadyPage } from "@/routes/journey/ReadyPage";
+import { StagePage } from "@/routes/journey/StagePage";
 import { HomePage } from "@/routes/HomePage";
 import { LabPage } from "@/routes/LabPage";
 
@@ -121,9 +127,26 @@ const describeRoute = createRoute({
   component: DescribePage,
 });
 
+const journeyRoutes = [
+  createRoute({ getParentRoute: () => rootRoute, path: "/journey", component: JourneyPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/journey/choose", component: ChooseProjectPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/journey/level", component: LevelPage }),
+  createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/journey/stage",
+    validateSearch: (search: Record<string, unknown>): { id: string } => ({
+      id: typeof search["id"] === "string" ? search["id"] : "",
+    }),
+    component: StagePage,
+  }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/journey/ready", component: ReadyPage }),
+  createRoute({ getParentRoute: () => rootRoute, path: "/journey/new-component", component: NewComponentPage }),
+] as const;
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   describeRoute,
+  ...journeyRoutes,
   catalogRoute,
   bomRoute,
   labRoute,

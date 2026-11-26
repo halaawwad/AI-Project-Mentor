@@ -54,7 +54,9 @@ npm run preview    # serve the production build
 
 | Screen | Route | Notes |
 | --- | --- | --- |
-| Home | `/` | Links every screen, with the demo flow |
+| Home | `/` | Two entry points ("I have a project idea", "I don't have an idea yet"), continue journey, **Reset demo** |
+| Learning journey | `/journey`, `/journey/choose`, `/journey/level`, `/journey/stage?id=`, `/journey/ready` | Choose a learning project or continue from approved parts, take a level check, then follow gated stages. Each stage has a lesson, its parts (View in 3D / Practice in 3D Lab) and a quiz; pass with 80% to unlock the next. A failed quiz shows mentor feedback and a second quiz version. Ends with "Ready to build your project" |
+| New component | `/journey/new-component` | Planned flow for parts not in the catalog, marked "Coming soon". It returns no results |
 | Describe your project | `/describe` | Describe a project in Arabic or English, or pick an example. Suggested parts come with a summary, quantity, role and reason. Review them, edit quantities, add or remove parts, then **Approve list** to add them to the BOM |
 | Component Catalog | `/catalog` | 43 parts in 8 categories. Category workbench with a 3D preview, a searchable library (English/Arabic) filtered by category and supply voltage, details with pins, connection sheets and original datasheet links. `?part=<key>` opens one part's details |
 | Bill of Materials | `/bom` | Parts added from the catalog, with quantities. Saved in `localStorage` |
@@ -86,7 +88,24 @@ All suggestions go through `suggestParts(description)` in `src/lib/suggest/index
   answer, or an unusable response. The page says why, in Arabic and English. Example projects
   return curated local results; other text uses keyword matching.
 
+### Learning journey (demo content)
+
+- **Paths:** fully written for traffic light, parking sensor and automatic irrigation
+  (`src/lib/journey/content.ts`). Beginners get an extra Electricity basics stage. Other
+  descriptions get a path generated from the approved parts using catalog and connection-sheet
+  data (`generic.ts`).
+- **Quizzes:** two 5-question versions per stage, graded in the browser. Pass mark is 80%. Mentor
+  strengths and weak points come from the skills of right and wrong answers. The alternative
+  explanation and practice task are prewritten per stage.
+- **Labels:** everything here is labelled "Demo content". Only Describe Project suggestions are
+  AI.
+- **Progress:** saved under `aipm.journey.v1`. Invalid data is reported and left untouched. Reset
+  demo clears the journey and the BOM; saved lab circuits are kept.
+
 ## Limitations
+
+- Lesson text, quizzes and mentor feedback are in English, with Arabic titles and labels.
+- Level "advanced" uses the same stages as "intermediate"; it only allows jumping to the quiz.
 
 - AI suggestions can be incomplete or wrong. Students should review every part and quantity
   before approving. The model only chooses from the 43 catalog parts.
@@ -110,6 +129,8 @@ src/
   main.tsx, router.tsx        app entry and routes (TanStack Router, client-only)
   routes/                     Home, Describe, Catalog, BOM and Lab pages
   lib/suggest/                suggestParts(), Gemini engine, validation, demo engine, examples
+  lib/journey/                learning journey: content, paths, level, grading, generic paths, store
+  routes/journey/             journey screens
   components/                 catalog workbench, previews, connection sheets, sidebar, brand
   components/lab/             HardwareLab and its wiring assistant
   components/ui/              shadcn/Radix primitives used by the migrated screens

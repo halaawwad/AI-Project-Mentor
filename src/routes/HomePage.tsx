@@ -1,19 +1,33 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowRight, Box, Cpu, Menu, Package, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  Box,
+  Compass,
+  Cpu,
+  GraduationCap,
+  Lightbulb,
+  Menu,
+  Package,
+  Sparkles,
+} from "lucide-react";
 import { AipmBrand } from "@/components/AipmBrand";
 import { AppSidebar } from "@/components/AppSidebar";
+import { ResetDemoButton } from "@/components/journey/JourneyUi";
 import { Button } from "@/components/ui/button";
 import { componentCatalog, readBom } from "@/lib/componentCatalog";
+import { useJourney } from "@/lib/journey/store";
 import { aiConfigured } from "@/lib/suggest";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 /** Minimal AiPM home: connects the catalog, BOM and 3D lab into one demo flow. */
 export function HomePage() {
   useDocumentTitle("AiPM · AI Project Mentor");
+  const journey = useJourney();
   const [menu, setMenu] = useState(false),
     [units, setUnits] = useState(0);
-  useEffect(() => setUnits(readBom().reduce((sum, entry) => sum + entry.quantity, 0)), []);
+  // Re-read after journey changes too, so "Reset demo" (which clears the BOM) updates the count.
+  useEffect(() => setUnits(readBom().reduce((sum, entry) => sum + entry.quantity, 0)), [journey]);
   const cards = [
     {
       to: "/describe",
@@ -49,9 +63,9 @@ export function HomePage() {
     },
   ] as const;
   const steps = [
-    "Describe your project, review the suggested parts and approve them into your BOM.",
-    "Open any part in the catalog for its specifications, or send it straight to the 3D lab.",
-    "Wire it in the lab, then run Validate Wiring and save your circuit.",
+    "Describe your idea (or pick a learning project) and approve the parts list.",
+    "Take a quick level check, then follow the learning path: lesson, 3D parts, practice, quiz.",
+    "Pass each stage's quiz to unlock the next, until you're ready to build your project.",
   ];
   return (
     <div className="dashboard-background catalog-background min-h-screen">
@@ -92,18 +106,49 @@ export function HomePage() {
             <p dir="rtl" className="mt-3 max-w-3xl text-lg text-muted-foreground">
               تعلّم الإلكترونيات من خلال مشروعك أنت.
             </p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              <Button asChild>
-                <Link to="/describe">
-                  Describe your project <ArrowRight size={14} />
-                </Link>
-              </Button>
-              <Button variant="secondary" asChild>
-                <Link to="/catalog">Browse the catalog</Link>
-              </Button>
-              <Button variant="secondary" asChild>
-                <Link to="/lab">Open the 3D lab</Link>
-              </Button>
+            <div className="mt-6 grid gap-3 md:grid-cols-2">
+              <Link
+                to="/describe"
+                className="group flex items-center gap-4 rounded-[20px] bg-primary p-5 text-primary-foreground shadow-lg transition-transform hover:-translate-y-0.5"
+              >
+                <Lightbulb size={30} className="shrink-0" />
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-lg">I have a project idea</strong>
+                  <span dir="rtl" className="block text-sm opacity-90">
+                    لدي فكرة مشروع
+                  </span>
+                  <span className="mt-1 block text-xs opacity-90">
+                    Describe it, review the suggested parts, then follow your learning path.
+                  </span>
+                </span>
+                <ArrowRight className="shrink-0 transition-transform group-hover:translate-x-1" />
+              </Link>
+              <Link
+                to="/journey/choose"
+                className="glass-inset group flex items-center gap-4 rounded-[20px] p-5 transition-transform hover:-translate-y-0.5"
+              >
+                <Compass size={30} className="shrink-0 text-primary" />
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-lg">I don't have an idea yet</strong>
+                  <span dir="rtl" className="block text-sm text-muted-foreground">
+                    ليس لدي فكرة بعد
+                  </span>
+                  <span className="mt-1 block text-xs text-muted-foreground">
+                    Start with a learning project: traffic light, then parking sensor.
+                  </span>
+                </span>
+                <ArrowRight className="shrink-0 transition-transform group-hover:translate-x-1" />
+              </Link>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              {journey.project && (
+                <Button variant="secondary" asChild>
+                  <Link to="/journey">
+                    <GraduationCap size={15} /> Continue my journey: {journey.project.title.en}
+                  </Link>
+                </Button>
+              )}
+              <ResetDemoButton />
             </div>
           </section>
           <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
@@ -141,10 +186,10 @@ export function HomePage() {
               ))}
             </ol>
             <p className="mt-4 text-[11px] leading-5 text-muted-foreground">
-              Part suggestions come from Gemini when an API key is configured, otherwise from a
-              local demo engine; always review them. Everything else runs in your browser with local
-              catalog data. Wiring checks are rule-based; they do not simulate electrical behaviour
-              or run code.
+              Only part suggestions use AI (Gemini, when an API key is configured; otherwise a local
+              demo engine). Learning paths, quizzes and mentor feedback are prewritten demo content,
+              or generated from catalog data, and are graded in your browser. Wiring checks are
+              rule-based; they do not simulate electrical behaviour or run code.
             </p>
           </section>
         </main>

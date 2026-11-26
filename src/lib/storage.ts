@@ -6,6 +6,7 @@
 export const STORAGE_KEYS = {
   bom: "aipm.bom.v1",
   labProject: "aipm.lab.project.v1",
+  journey: "aipm.journey.v1",
 } as const;
 
 export const storageEvent = "aipm-storage-result";
@@ -69,6 +70,17 @@ export function writeLocal(key: string, value: unknown) {
     );
     throw cause;
   }
+}
+
+/** Explicit, user-initiated removal of one key (also clears its unreadable flag). */
+export function removeLocal(key: string) {
+  unreadable.delete(key);
+  try {
+    storage()?.removeItem(key);
+  } catch {
+    /* nothing more can be done; the key stays as it was */
+  }
+  if (!unreadable.size) storageFailure("");
 }
 
 /** Explicit, user-initiated reset of keys that hold unreadable data. */

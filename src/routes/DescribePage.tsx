@@ -1,4 +1,4 @@
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   Check,
@@ -15,7 +15,9 @@ import {
   X,
 } from "lucide-react";
 import { AppSidebar } from "@/components/AppSidebar";
+import { JourneyIndicator } from "@/components/journey/JourneyUi";
 import { Button } from "@/components/ui/button";
+import { startIdeaJourney } from "@/lib/journey/store";
 import { usePartPreviews } from "@/lib/lab/usePartPreviews";
 import {
   addManyToBom,
@@ -36,6 +38,9 @@ const MAX_DESCRIPTION = 2000;
 export function DescribePage() {
   useDocumentTitle("Describe your project | AiPM");
   const previews = usePartPreviews();
+  const navigate = useNavigate();
+  // The description the current results were made for (the textarea may change afterwards).
+  const [resultDescription, setResultDescription] = useState("");
   const [menu, setMenu] = useState(false),
     [description, setDescription] = useState(""),
     [loading, setLoading] = useState(false),
@@ -64,6 +69,7 @@ export function DescribePage() {
       const next = await suggestParts(trimmed);
       if (!mounted.current) return;
       setResult(next);
+      setResultDescription(trimmed);
       setParts(next.parts);
       setApproved(false);
     } finally {
@@ -135,6 +141,7 @@ export function DescribePage() {
           className="lg:sticky lg:top-4 lg:h-[calc(100vh-32px)]"
         />
         <main className="min-w-0 flex-1 space-y-4 pb-6">
+          <JourneyIndicator current={result ? "parts" : "idea"} />
           <header className="glass-panel flex flex-wrap items-center gap-3 rounded-[22px] p-5">
             <Button
               variant="ghost"
@@ -369,6 +376,27 @@ export function DescribePage() {
                   <button aria-label="Dismiss message" onClick={() => setNotice(null)}>
                     <X size={14} />
                   </button>
+                </div>
+              )}
+              {approved && (
+                <div className="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-primary/30 bg-mint/60 p-3">
+                  <p className="min-w-0 flex-1 text-sm">
+                    Next: a quick level check, then a learning path for this parts list.
+                    <span dir="rtl" className="block text-xs">
+                      التالي: تحديد سريع للمستوى ثم مسار تعلّم لهذه القطع.
+                    </span>
+                  </p>
+                  <Button
+                    onClick={() => {
+                      startIdeaJourney(
+                        resultDescription,
+                        parts.map(({ key, quantity }) => ({ key, quantity })),
+                      );
+                      void navigate({ to: "/journey/level" });
+                    }}
+                  >
+                    Continue to level check →
+                  </Button>
                 </div>
               )}
             </section>
