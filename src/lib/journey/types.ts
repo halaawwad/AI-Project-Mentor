@@ -76,6 +76,16 @@ export interface WrongAnswer {
   correct: string;
 }
 
+export interface StageAttempt {
+  score: number;
+  quizId: string;
+  source: QuizSource;
+  /** What the adaptive rules decided for this quiz (absent in older saved data). */
+  kind?: QuizPlan["kind"];
+  /** The skill the explanation before this quiz focused on. */
+  focusSkill?: string;
+}
+
 export interface StageHistory {
   /** Normalized prompts of every question already asked in this stage. */
   asked: string[];
@@ -83,9 +93,27 @@ export interface StageHistory {
   wrong: WrongAnswer[];
   /** Skills missed in the latest attempt. */
   lastWrongSkills: string[];
-  attempts: { score: number; quizId: string; source: QuizSource }[];
+  attempts: StageAttempt[];
   /** The prepared next quiz, cached so a reload doesn't build or request it again. */
   pending: PersonalizedQuiz | null;
+}
+
+/** One answered question: what the learner chose, what was correct, and what it checked. */
+export interface AnswerRecord {
+  questionId: string;
+  /** Stage the question belongs to, or "level" for the level check. */
+  stageId: string;
+  skill: string;
+  difficulty: Difficulty;
+  /** Text as asked (English for local questions, the quiz language for Gemini questions). */
+  prompt: string;
+  chosen: string;
+  /** null when the question was left unanswered. */
+  chosenIndex: number | null;
+  correctAnswer: string;
+  correctIndex: number;
+  isCorrect: boolean;
+  source: QuizSource;
 }
 
 export interface LearnerProfile {
@@ -95,6 +123,67 @@ export interface LearnerProfile {
   baseline: number;
   difficulty: Difficulty;
   history: Record<string, StageHistory>;
+  /** Recent answer records, newest first (capped), for the mentor analysis. */
+  answers: AnswerRecord[];
+}
+
+export type InsightSource = "ai" | "local";
+export type Confidence = "low" | "medium" | "high";
+
+export interface Misconception {
+  skill: string;
+  text: string;
+}
+
+export interface Diagnosis {
+  summary: string;
+  /** Skill tags. */
+  strengths: string[];
+  weakSkills: string[];
+  /** AI: likely misconceptions. Local: recent mistakes (chosen vs. correct answer). */
+  misconceptions: Misconception[];
+  confidence: Confidence;
+  confidenceNote: string;
+}
+
+export type PlanAction = "keep" | "add-remedial" | "shorten" | "skippable";
+
+export interface PlanItem {
+  kind: "stage" | "remedial";
+  /** A stage id for `stage` items, a skill tag for `remedial` items. */
+  target: string;
+  action: PlanAction;
+  reason: string;
+  /** Gemini's personalized explanation for a remedial skill ("" when there is none). */
+  explanation: string;
+}
+
+export interface LearningPlan {
+  items: PlanItem[];
+  /** "What changed and why" compared with the previous plan. */
+  changeNote: string;
+}
+
+/** Diagnosis and plan for one checkpoint (after the level check or after a completed stage). */
+export interface MentorInsight {
+  id: string;
+  /** "level", or "stage:<id>" after that stage was completed. */
+  checkpoint: string;
+  source: InsightSource;
+  fallbackReason?: FallbackReason;
+  language: Language;
+  /** Number of answer records the analysis was based on. */
+  basedOn: number;
+  diagnosis: Diagnosis;
+  plan: LearningPlan;
+}
+
+export interface MentorState {
+  checkpoint: string;
+  /** Insights for this checkpoint, at most one per language. */
+  insights: MentorInsight[];
+  /** The plan of the previous checkpoint, for "What changed and why". */
+  previous: { checkpoint: string; source: InsightSource; items: PlanItem[] } | null;
 }
 
 /** What the adaptive rules decided for the next quiz. */
@@ -140,6 +229,8 @@ export interface JourneyState {
   level: Level | null;
   levelScore: number | null;
   progress: Record<string, StageProgress>;
+  /** Mentor analysis and personalized plan (phase 6); null until the first checkpoint. */
+  mentor: MentorState | null;
 }
 
 export const PASS_MARK = 80;

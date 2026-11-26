@@ -1,12 +1,20 @@
 import { useSyncExternalStore } from "react";
 import { catalogByKey } from "@/lib/componentCatalog";
 import { readLocal, removeLocal, STORAGE_KEYS, writeLocal } from "@/lib/storage";
-import { emptyHistory, initialProfile, updateProfileAfterQuiz } from "./adaptive";
+import { emptyHistory, initialProfile, MAX_ANSWER_RECORDS, updateProfileAfterQuiz } from "./adaptive";
 import { recordAttempt, type QuizGrade } from "./grading";
+import { withInsight } from "./mentor";
 import { learningProjectById, matchProject } from "./projects";
 import {
   DIFFICULTIES,
+  type AnswerRecord,
   type Difficulty,
+  type MentorInsight,
+  type MentorState,
+  type PlanAction,
+  type PlanItem,
+  type QuizPlan,
+  type StageAttempt,
   type JourneyState,
   type Language,
   type LearnerProfile,
@@ -20,6 +28,7 @@ import {
 } from "./types";
 
 const LEVELS: Level[] = ["beginner", "intermediate", "advanced"];
+const PLAN_KINDS: QuizPlan["kind"][] = ["first", "retry", "next-stage", "practice"];
 export type LearnerId = "a" | "b";
 export const LEARNERS: { id: LearnerId; en: string; ar: string }[] = [
   { id: "a", en: "Student A", ar: "الطالب أ" },
@@ -39,6 +48,7 @@ export const emptyJourney = (language: Language = "ar"): JourneyState => ({
   level: null,
   levelScore: null,
   progress: {},
+  mentor: null,
 });
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -136,16 +146,135 @@ function sanitizeProfile(raw: unknown): LearnerProfile | null {
             )
           : [],
         attempts: Array.isArray(entry["attempts"])
-          ? entry["attempts"].filter(
-              (a): a is StageHistory["attempts"][number] =>
-                isRecord(a) && typeof a["score"] === "number" && typeof a["quizId"] === "string" && (a["source"] === "ai" || a["source"] === "local"),
+          ? entry["attempts"].flatMap((a): StageAttempt[] =>
+              isRecord(a) && typeof a["score"] === "number" && typeof a["quizId"] === "string" && (a["source"] === "ai" || a["source"] === "local")
+                ? [
+                    {
+                      score: a["score"],
+                      quizId: a["quizId"],
+                      source: a["source"],
+                      ...(PLAN_KINDS.includes(a["kind"] as QuizPlan["kind"]) ? { kind: a["kind"] as QuizPlan["kind"] } : {}),
+                      ...(typeof a["focusSkill"] === "string" ? { focusSkill: a["focusSkill"] } : {}),
+                    },
+                  ]
+                : [],
             )
           : [],
         pending: sanitizePending(entry["pending"]),
       };
     }
   const baseline = typeof raw["baseline"] === "number" && Number.isFinite(raw["baseline"]) ? raw["baseline"] : 50;
-  return { mastery, baseline, difficulty: raw["difficulty"], history };
+  const answers = Array.isArray(raw["answers"])
+    ? raw["answers"].map(sanitizeRecord).filter((r): r is AnswerRecord => r !== null).slice(0, MAX_ANSWER_RECORDS)
+    : [];
+  return { mastery, baseline, difficulty: raw["difficulty"], history, answers };
+}
+
+const isIndex = (value: unknown) => Number.isInteger(value) && (value as number) >= 0 && (value as number) <= 3;
+
+function sanitizeRecord(raw: unknown): AnswerRecord | null {
+  if (
+    !isRecord(raw) ||
+    !["questionId", "stageId", "skill", "prompt", "chosen", "correctAnswer"].every((k) => typeof raw[k] === "string") ||
+    !isDifficulty(raw["difficulty"]) ||
+    !(raw["chosenIndex"] === null || isIndex(raw["chosenIndex"])) ||
+    !isIndex(raw["correctIndex"]) ||
+    typeof raw["isCorrect"] !== "boolean" ||
+    (raw["source"] !== "ai" && raw["source"] !== "local")
+  )
+    return null;
+  return {
+    questionId: raw["questionId"] as string,
+    stageId: raw["stageId"] as string,
+    skill: raw["skill"] as string,
+    difficulty: raw["difficulty"],
+    prompt: raw["prompt"] as string,
+    chosen: raw["chosen"] as string,
+    chosenIndex: raw["chosenIndex"] as number | null,
+    correctAnswer: raw["correctAnswer"] as string,
+    correctIndex: raw["correctIndex"] as number,
+    isCorrect: raw["isCorrect"],
+    source: raw["source"],
+  };
+}
+
+const PLAN_ACTIONS: PlanAction[] = ["keep", "add-remedial", "shorten", "skippable"];
+const textOf = (value: unknown) => (typeof value === "string" ? value : "");
+
+function sanitizePlanItems(raw: unknown): PlanItem[] | null {
+  if (!Array.isArray(raw)) return null;
+  const items: PlanItem[] = [];
+  for (const entry of raw) {
+    if (
+      !isRecord(entry) ||
+      (entry["kind"] !== "stage" && entry["kind"] !== "remedial") ||
+      typeof entry["target"] !== "string" ||
+      !PLAN_ACTIONS.includes(entry["action"] as PlanAction)
+    )
+      return null;
+    items.push({
+      kind: entry["kind"],
+      target: entry["target"],
+      action: entry["action"] as PlanAction,
+      reason: textOf(entry["reason"]),
+      explanation: textOf(entry["explanation"]),
+    });
+  }
+  return items;
+}
+
+/** A cached insight is kept only if it is well-formed; it is checked against the path when shown. */
+function sanitizeInsight(raw: unknown): MentorInsight | null {
+  if (!isRecord(raw) || !isRecord(raw["diagnosis"]) || !isRecord(raw["plan"])) return null;
+  const d = raw["diagnosis"];
+  const items = sanitizePlanItems(raw["plan"]["items"]);
+  if (
+    !items ||
+    typeof raw["id"] !== "string" ||
+    typeof raw["checkpoint"] !== "string" ||
+    (raw["source"] !== "ai" && raw["source"] !== "local") ||
+    (raw["language"] !== "ar" && raw["language"] !== "en") ||
+    !["low", "medium", "high"].includes(d["confidence"] as string)
+  )
+    return null;
+  return {
+    id: raw["id"],
+    checkpoint: raw["checkpoint"],
+    source: raw["source"],
+    ...(typeof raw["fallbackReason"] === "string" ? { fallbackReason: raw["fallbackReason"] as NonNullable<MentorInsight["fallbackReason"]> } : {}),
+    language: raw["language"],
+    basedOn: typeof raw["basedOn"] === "number" ? raw["basedOn"] : 0,
+    diagnosis: {
+      summary: textOf(d["summary"]),
+      strengths: strings(d["strengths"]),
+      weakSkills: strings(d["weakSkills"]),
+      misconceptions: Array.isArray(d["misconceptions"])
+        ? d["misconceptions"].filter((m): m is { skill: string; text: string } => isRecord(m) && typeof m["skill"] === "string" && typeof m["text"] === "string")
+        : [],
+      confidence: d["confidence"] as MentorInsight["diagnosis"]["confidence"],
+      confidenceNote: textOf(d["confidenceNote"]),
+    },
+    plan: { items, changeNote: textOf(raw["plan"]["changeNote"]) },
+  };
+}
+
+function sanitizeMentor(raw: unknown): MentorState | null {
+  if (!isRecord(raw) || typeof raw["checkpoint"] !== "string") return null;
+  const checkpoint = raw["checkpoint"];
+  const insights = (Array.isArray(raw["insights"]) ? raw["insights"].map(sanitizeInsight) : []).filter(
+    (i): i is MentorInsight => i !== null && i.checkpoint === checkpoint,
+  );
+  if (!insights.length) return null;
+  const prev = raw["previous"];
+  const prevItems = isRecord(prev) ? sanitizePlanItems(prev["items"]) : null;
+  return {
+    checkpoint,
+    insights,
+    previous:
+      isRecord(prev) && prevItems && typeof prev["checkpoint"] === "string" && (prev["source"] === "ai" || prev["source"] === "local")
+        ? { checkpoint: prev["checkpoint"], source: prev["source"], items: prevItems }
+        : null,
+  };
 }
 
 /**
@@ -195,6 +324,7 @@ export function sanitizeJourney(raw: Record<string, unknown>): JourneyState {
           lastScore: typeof entry["lastScore"] === "number" ? entry["lastScore"] : null,
         } satisfies StageProgress;
   state.profile = sanitizeProfile(raw["profile"]);
+  state.mentor = state.level ? sanitizeMentor(raw["mentor"]) : null;
   // A journey that already has a level always gets a profile.
   if (state.level && !state.profile) state.profile = initialProfile(state.level);
   return state;
@@ -233,6 +363,15 @@ export function readJourney(): JourneyState {
     memory = isRecord(raw) ? sanitizeJourney(raw) : emptyJourney();
   }
   return memory;
+}
+
+/** Every demo learner's journey on this device (the active one from memory), for local insights. */
+export function readLearnerJourneys(): { learner: LearnerId; state: JourneyState }[] {
+  return LEARNERS.map(({ id }) => {
+    if (id === activeLearner()) return { learner: id, state: readJourney() };
+    const raw = readLocal<unknown>(journeyKey(id), null, (v) => isRecord(v) && v["version"] === 1);
+    return { learner: id, state: isRecord(raw) ? sanitizeJourney(raw) : emptyJourney() };
+  });
 }
 
 /** Saves to memory and, when possible, to localStorage. Returns false if storage failed. */
@@ -305,7 +444,13 @@ export const setJourneyLevel = (level: Level, levelScore: number, levelAnswers: 
     levelScore,
     progress: {},
     profile: initialProfile(level, levelAnswers),
+    // A new level check starts a new plan; the first diagnosis is made for it.
+    mentor: null,
   }));
+
+/** Caches a mentor analysis and plan; a new checkpoint keeps the old plan for "What changed". */
+export const saveMentorInsight = (insight: MentorInsight) =>
+  updateJourney((state) => ({ ...state, mentor: withInsight(state.mentor, insight) }));
 
 export const setJourneyLanguage = (language: Language) => updateJourney((state) => ({ ...state, language }));
 

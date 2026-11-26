@@ -104,7 +104,8 @@ export function JourneyLayout({
   children,
 }: {
   active?: AppSection;
-  step: JourneyStepId;
+  /** Omitted on screens outside the journey (no progress indicator). */
+  step?: JourneyStepId;
   eyebrow: string;
   title: string;
   arabic: string;
@@ -131,9 +132,7 @@ export function JourneyLayout({
         />
         <main className="min-w-0 flex-1 space-y-4 pb-6">
           <div className="flex flex-wrap items-center gap-2">
-            <div className="min-w-0 flex-1">
-              <JourneyIndicator current={step} />
-            </div>
+            <div className="min-w-0 flex-1">{step && <JourneyIndicator current={step} />}</div>
             <LanguageToggle language={journey.language} />
             <LearnerSwitch />
           </div>

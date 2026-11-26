@@ -1,13 +1,16 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowRight, CheckCircle2, CircleDot, Lock, PackageSearch, Trophy } from "lucide-react";
+import { ArrowRight, CheckCircle2, CircleDot, Loader2, Lock, PackageSearch, Trophy } from "lucide-react";
 import { DemoBadge, JourneyLayout, ResetDemoButton } from "@/components/journey/JourneyUi";
+import { ActionBadge, InsightSourceLabel, MentorAnalysisPanel, RemedialCard, WhatChanged } from "@/components/journey/Mentor";
 import { SkillsPanel } from "@/components/journey/Personalization";
 import { Button } from "@/components/ui/button";
 import { allPassed, stageStatuses } from "@/lib/journey/grading";
 import { levelInfo } from "@/lib/journey/level";
+import { effectivePlan } from "@/lib/journey/mentor";
 import { buildPath } from "@/lib/journey/path";
 import { useJourney } from "@/lib/journey/store";
-import { PASS_MARK } from "@/lib/journey/types";
+import { useMentorInsight } from "@/lib/journey/useMentor";
+import { PASS_MARK, type PlanItem } from "@/lib/journey/types";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 /** Learning path and progress: locked / current / passed stages with scores and attempts. */
@@ -18,6 +21,8 @@ export function JourneyPage() {
   const stages = buildPath(journey);
   const statuses = stageStatuses(stages, journey.progress);
   const done = allPassed(stages, journey.progress);
+  // Right after the level check (and after each completed stage) this asks for one diagnosis + plan.
+  const mentor = useMentorInsight(stages);
 
   if (!journey.project || !journey.level || !stages.length) {
     const step = !journey.project ? "idea" : !journey.parts.length ? "parts" : "level";
@@ -52,6 +57,10 @@ export function JourneyPage() {
 
   const current = stages.find((_, i) => statuses[i] === "current");
   const generated = stages.some((s) => s.source === "generated");
+  const plan = effectivePlan(stages, mentor.shown);
+  const planLang = mentor.shown?.language ?? lang;
+  const items: PlanItem[] =
+    plan ?? stages.map((stage) => ({ kind: "stage", target: stage.id, action: "keep", reason: "", explanation: "" }));
   return (
     <JourneyLayout
       step={done ? "ready" : "path"}
@@ -65,6 +74,8 @@ export function JourneyPage() {
         </div>
       }
     >
+      <MentorAnalysisPanel mentor={mentor} language={lang} />
+      <WhatChanged mentor={mentor} stages={stages} />
       <SkillsPanel profile={journey.profile} stages={stages} language={lang} />
       <section className="glass-panel rounded-[22px] p-5">
         {lang === "ar" ? (
@@ -85,8 +96,30 @@ export function JourneyPage() {
               : "No written path matches this project, so the stages and quizzes are generated from your approved parts using catalog and connection-sheet data."}
           </p>
         )}
-        <ol className="mt-4 space-y-2">
-          {stages.map((stage, i) => {
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-bold">
+            Your plan <span dir="rtl" className="font-normal">· خطتك</span>
+          </h2>
+          {plan && mentor.shown ? (
+            <InsightSourceLabel source={mentor.shown.source} kind="plan" />
+          ) : (
+            mentor.preparing && (
+              <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <Loader2 className="animate-spin" size={12} /> Preparing your plan… · جارٍ تجهيز خطتك…
+              </span>
+            )
+          )}
+        </div>
+        <ol className="mt-2 space-y-2">
+          {items.map((item) => {
+            if (item.kind === "remedial")
+              return (
+                <li key={`remedial-${item.target}`}>
+                  <RemedialCard item={item} stages={stages} language={planLang} />
+                </li>
+              );
+            const i = stages.findIndex((s) => s.id === item.target);
+            const stage = stages[i]!;
             const status = statuses[i]!;
             const progress = journey.progress[stage.id];
             const Icon = status === "passed" ? CheckCircle2 : status === "current" ? CircleDot : Lock;
@@ -97,8 +130,8 @@ export function JourneyPage() {
               >
                 <Icon size={20} className={status === "passed" ? "text-success" : status === "current" ? "text-primary" : "text-muted-foreground"} />
                 <div className="min-w-[12rem] flex-1">
-                  <p className="text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
-                    STAGE {i + 1} · {status.toUpperCase()}
+                  <p className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
+                    STAGE {i + 1} · {status.toUpperCase()} <ActionBadge action={status === "passed" ? "keep" : item.action} />
                   </p>
                   <strong dir={lang === "ar" ? "rtl" : "ltr"} className="text-sm">
                     {stage.title[lang]}
@@ -106,6 +139,18 @@ export function JourneyPage() {
                   <span dir={lang === "ar" ? "ltr" : "rtl"} className="text-xs text-muted-foreground">
                     · {stage.title[lang === "ar" ? "en" : "ar"]}
                   </span>
+                  {item.reason && (
+                    <p dir={planLang === "ar" ? "rtl" : "ltr"} className="mt-0.5 text-xs text-muted-foreground">
+                      {item.reason}
+                    </p>
+                  )}
+                  {item.action === "skippable" && status !== "passed" && (
+                    <p dir={lang === "ar" ? "rtl" : "ltr"} className="mt-0.5 text-[11px] font-semibold">
+                      {lang === "ar"
+                        ? `يمكنك تخطي الدرس: اجتز اختبار المرحلة بنسبة ${PASS_MARK}% مباشرة.`
+                        : `You can skip the lesson: pass this stage's quiz with ${PASS_MARK}% directly.`}
+                    </p>
+                  )}
                 </div>
                 <span className="text-xs text-muted-foreground">
                   {progress

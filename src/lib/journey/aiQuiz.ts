@@ -2,10 +2,13 @@ import { catalogByKey, componentCatalog } from "@/lib/componentCatalog";
 import { AiSuggestionError, classifyError, responseText, type AiClient } from "@/lib/suggest/aiEngine";
 import { shortFunction } from "@/lib/suggest/catalogContext";
 import { masteryOf, promptKey, QUIZ_LENGTH, stageSkills } from "./adaptive";
+import { exampleQuestions, formatExampleQuestions, formatMisconceptions, retrieveMisconceptions } from "./misconceptions";
 import { hashSeed } from "./random";
 import {
   DIFFICULTIES,
+  type Diagnosis,
   type Difficulty,
+  type InsightSource,
   type Language,
   type LearnerProfile,
   type Question,
@@ -20,6 +23,8 @@ export interface AiQuizContext {
   language: Language;
   /** Keys of every part in the student's project (allowed in questions). */
   projectParts: string[];
+  /** The latest mentor analysis, so questions target the identified misconceptions. */
+  mentor?: { source: InsightSource; diagnosis: Diagnosis };
 }
 
 export interface GeneratedQuiz {
@@ -68,6 +73,8 @@ Return:
 - questions: exactly ${QUIZ_LENGTH} multiple-choice questions. Each has exactly 4 different options, exactly one correct option (correctIndex 0–3), a one-sentence explanation, a skill from the allowed list and a difficulty.
 - Follow the plan: at least 2 questions on the focus skills, the requested number of review questions on the review skill, and mostly the target difficulty.
 - Never repeat or reword a question from the already-asked list.
+- Known misconceptions (matched locally to the learner's wrong answers) may be given: target them, and use their wrong ideas as distractors.
+- If a mentor analysis is given, aim at least one question at each listed misconception whose skill is in the allowed list, so the quiz checks whether it's fixed.
 ${
   language === "ar"
     ? "- Write everything in Arabic, but keep technical terms, pin names, part names and code in English, for example GND, VCC, PWM, Arduino, I²C, TRIG, digitalWrite."
@@ -86,6 +93,30 @@ export function buildQuizPrompt(ctx: AiQuizContext) {
     .map((w) => `- [${w.skill}] "${w.prompt}" — answered "${w.chosen}", correct "${w.correct}"`)
     .join("\n");
   const asked = (history?.asked ?? []).map((p) => `- ${p}`).join("\n");
+  const analysis = ctx.mentor
+    ? `
+<mentor_analysis source="${ctx.mentor.source}">
+Weak skills: ${ctx.mentor.diagnosis.weakSkills.join(", ") || "none"}
+Likely misconceptions:
+${ctx.mentor.diagnosis.misconceptions.map((m) => `- [${m.skill}] ${m.text}`).join("\n") || "- none"}
+</mentor_analysis>`
+    : "";
+  const known = formatMisconceptions(retrieveMisconceptions(profile.answers ?? [], { skills: allowedSkills(ctx), limit: 3 }));
+  const examples = formatExampleQuestions(
+    exampleQuestions([stage], plan.focusSkills.length ? plan.focusSkills : stageSkills(stage), new Set((profile.answers ?? []).map((r) => r.questionId)), 2),
+  );
+  const grounding = `${
+    known
+      ? `
+<known_misconceptions>
+${known}
+</known_misconceptions>`
+      : ""
+  }
+<style_examples>
+Local bank questions, for style and accuracy only. Write new questions; never copy these.
+${examples || "- none"}
+</style_examples>`;
   return `<stage>
 Title: ${stage.title.en}
 Goal: ${stage.goal}
@@ -104,7 +135,7 @@ ${wrong || "- none yet"}
 Focus skills: ${plan.focusSkills.join(", ") || "this stage's skills"}
 Review skill: ${plan.reviewSkill ? `${plan.reviewSkill} (${plan.reviewCount} question${plan.reviewCount > 1 ? "s" : ""})` : "none"}
 Allowed skills: ${allowedSkills(ctx).join(", ")}
-</plan>
+</plan>${analysis}${grounding}
 <already_asked>
 ${asked || "- none"}
 </already_asked>`;

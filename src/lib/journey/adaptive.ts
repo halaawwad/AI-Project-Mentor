@@ -6,6 +6,7 @@ import { hashSeed } from "./random";
 import {
   DIFFICULTIES,
   PASS_MARK,
+  type AnswerRecord,
   type Bi,
   type Difficulty,
   type Language,
@@ -44,16 +45,54 @@ export const emptyHistory = (): StageHistory => ({
   pending: null,
 });
 
+/** Most recent answer records kept per learner (newest first). */
+export const MAX_ANSWER_RECORDS = 40;
+
+/** Records each answer: chosen and correct option, skill and difficulty. */
+export function answerRecords(
+  stageId: string,
+  questions: Question[],
+  answers: (number | null | undefined)[],
+  source: QuizSource,
+): AnswerRecord[] {
+  return questions.map((q, i) => {
+    const chosenIndex = answers[i] ?? null;
+    return {
+      questionId: q.id,
+      stageId,
+      skill: q.skill,
+      difficulty: q.difficulty,
+      prompt: q.prompt,
+      chosen: chosenIndex === null ? "" : (q.options[chosenIndex] ?? ""),
+      chosenIndex,
+      correctAnswer: q.options[q.correct] ?? "",
+      correctIndex: q.correct,
+      isCorrect: chosenIndex === q.correct,
+      source,
+    };
+  });
+}
+
 /** Profile from the level check: difficulty from the level, mastery seeded by its answers. */
 export function initialProfile(level: Level, levelAnswers: (number | null)[] = []): LearnerProfile {
   const baseline = BASELINE[level];
   const mastery: Record<string, number> = {};
+  const asked: Question[] = [];
+  const given: (number | null)[] = [];
   levelQuestions.forEach((q, i) => {
     const answer = levelAnswers[i];
     if (answer === null || answer === undefined) return;
     mastery[q.skill] = clamp(baseline + (answer === q.correct ? 15 : -15));
+    asked.push(q);
+    given.push(answer);
   });
-  return { mastery, baseline, difficulty: START_DIFFICULTY[level], history: {} };
+  return {
+    mastery,
+    baseline,
+    difficulty: START_DIFFICULTY[level],
+    history: {},
+    answers: answerRecords("level", asked, given, "local").reverse(),
+  };
 }
 
 export const masteryOf = (profile: LearnerProfile, skill: string) =>
@@ -68,7 +107,7 @@ export const stageSkills = (stage: Stage) => unique(stage.bank.map((q) => q.skil
 export function updateProfileAfterQuiz(
   profile: LearnerProfile,
   stageId: string,
-  quiz: { id: string; questions: Question[]; source?: QuizSource },
+  quiz: { id: string; questions: Question[]; source?: QuizSource; plan?: QuizPlan },
   answers: (number | null)[],
   grade: Pick<QuizGrade, "score" | "passed" | "results">,
 ): LearnerProfile {
@@ -86,17 +125,28 @@ export function updateProfileAfterQuiz(
   let difficulty = profile.difficulty;
   if (!grade.passed && grade.score < 50) difficulty = stepDifficulty(difficulty, -1);
   if (grade.passed && history.attempts.length === 0 && grade.score === 100) difficulty = stepDifficulty(difficulty, 1);
+  const records = answerRecords(stageId, quiz.questions, answers, quiz.source ?? "local").reverse();
   return {
     ...profile,
     mastery,
     difficulty,
+    answers: [...records, ...(profile.answers ?? [])].slice(0, MAX_ANSWER_RECORDS),
     history: {
       ...profile.history,
       [stageId]: {
         asked: unique([...history.asked, ...quiz.questions.map((q) => promptKey(q.prompt))]),
         wrong: [...wrong, ...history.wrong].slice(0, MAX_WRONG),
         lastWrongSkills: unique(wrong.map((w) => w.skill)),
-        attempts: [...history.attempts, { score: grade.score, quizId: quiz.id, source: quiz.source ?? "local" }],
+        attempts: [
+          ...history.attempts,
+          {
+            score: grade.score,
+            quizId: quiz.id,
+            source: quiz.source ?? "local",
+            ...(quiz.plan ? { kind: quiz.plan.kind } : {}),
+            ...(quiz.plan?.focusSkills[0] ? { focusSkill: quiz.plan.focusSkills[0] } : {}),
+          },
+        ],
         pending: null,
       },
     },
@@ -198,17 +248,20 @@ export function selectLocalQuestions(
   return chosen;
 }
 
-/** Prewritten explanation for the weakest skill: the bank's notes on it plus the stage analogy. */
-export function localExplanation(stages: Stage[], index: number, plan: QuizPlan, language: Language = "en") {
-  const stage = stages[index]!;
-  const skill = plan.focusSkills[0] ?? plan.reviewSkill ?? stageSkills(stage)[0] ?? "";
-  const notes = unique(
+/** Up to three prewritten bank explanations for a skill, from the given stages. */
+export const skillNotes = (stages: Stage[], skill: string, language: Language) =>
+  unique(
     stages
-      .slice(0, index + 1)
       .flatMap((s) => s.bank)
       .filter((q) => q.skill === skill)
       .map((q) => questionText(q, language).explanation),
   ).slice(0, 3);
+
+/** Prewritten explanation for the weakest skill: the bank's notes on it plus the stage analogy. */
+export function localExplanation(stages: Stage[], index: number, plan: QuizPlan, language: Language = "en") {
+  const stage = stages[index]!;
+  const skill = plan.focusSkills[0] ?? plan.reviewSkill ?? stageSkills(stage)[0] ?? "";
+  const notes = skillNotes(stages.slice(0, index + 1), skill, language);
   return `${skillLabel(skill, language)}: ${notes.join(" ")} ${stageText(stage, language).mentor.alternative}`.trim();
 }
 

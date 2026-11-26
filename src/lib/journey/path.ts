@@ -14,6 +14,15 @@ export function buildPath(state: Pick<JourneyState, "project" | "parts" | "level
   return state.level === "beginner" ? [basics, ...stages] : stages;
 }
 
+/**
+ * Prerequisites per stage. Every lesson builds on the one before it (basics → parts → timing or
+ * logic → the full build), so each stage requires the previous one. A plan therefore can't
+ * reorder stages, and stage locking stays exactly as it is.
+ */
+export function stagePrerequisites(stages: Stage[]): Record<string, string[]> {
+  return Object.fromEntries(stages.map((stage, i) => [stage.id, i > 0 ? [stages[i - 1]!.id] : []]));
+}
+
 /** Journey indicator steps, in order. */
 export const journeySteps = [
   { id: "idea", en: "Idea", ar: "الفكرة" },

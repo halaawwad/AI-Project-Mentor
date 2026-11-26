@@ -45,7 +45,7 @@ Other scripts:
 
 ```bash
 npm run typecheck  # TypeScript, no emit
-npm test           # Vitest (lab catalog and wiring rule tests migrated from LabAssist)
+npm test           # Vitest (lab, wiring rules, journey, quizzes, mentor; Gemini is always mocked)
 npm run build      # typecheck + production build into dist/
 npm run preview    # serve the production build
 ```
@@ -68,6 +68,8 @@ npm run preview    # serve the production build
 | --- | --- |
 | `aipm.bom.v1` | `[{ key, quantity }]` BOM entries (catalog keys) |
 | `aipm.lab.project.v1` | Lab project: circuits, parts, wires and saved versions |
+| `aipm.journey.v1`, `aipm.journey.v1.learner-b` | Journeys of Student A and B: progress, profile (mastery, answer records, cached quizzes) and the cached mentor analysis and plan |
+| `aipm.learner.active` | The active demo learner |
 
 If saved data can't be read, AiPM leaves it untouched and shows a notice. The notice lets you
 retry or explicitly reset the unreadable data. Lab parts with unknown types and wires pointing at
@@ -119,6 +121,90 @@ All suggestions go through `suggestParts(description)` in `src/lib/suggest/index
   full question bank, level check, mentor text, practice tasks, generated paths, skill names) is
   written in both languages.
 
+### Mentor analysis and personalized plan (phase 6)
+
+- **Answer records** (`profile.answers`, newest 40): for every level-check and quiz answer, the
+  question, the chosen option, the correct option, the skill tag, the difficulty and the source.
+- **One Gemini request per checkpoint** (`mentorAi.ts`): right after the level check and after each
+  completed stage, diagnosis and plan come back together in one structured-JSON request, with no
+  retries. The request contains the project parts, the path's stages with their skills,
+  prerequisites and status, mastery per skill, the level, the last 20 answer records and the
+  previous plan. Results are cached per checkpoint and language, so reloads and practice quizzes
+  don't send another request. A language switch sends one request for the new language. **Try
+  Gemini again** sends one request, and only when you click it.
+- **Diagnosis:** strengths, weak skills, likely misconceptions in plain language (from the wrong
+  option the learner chose) and a confidence note. Confidence must be "low" with fewer than 6
+  answers.
+- **Plan:** every stage in order with an action (keep, shorten, skippable) and a reason, plus up to
+  three remedial mini-lessons for weak skills (local skill notes plus Gemini's personalized
+  explanation).
+- **Local validation** (`validateDiagnosis`, `validatePlan`) rejects:
+  - unknown stages or skills
+  - strengths or weaknesses without evidence
+  - misconceptions without a wrong answer
+  - missing reasons
+  - a plan that leaves out a stage
+  - broken prerequisite order (each stage requires the previous one, so stages are never
+    reordered)
+  - a completed stage marked anything but keep
+  - a skippable stage that covers a weak skill
+  - remedials for skills that aren't weak, or placed before a completed stage
+  - text that names a part outside the project
+- **Gating is unchanged:** grading, the 80% pass mark and stage locking stay local. *Skippable*
+  only lets you skip the lesson; the stage opens in order and passes only with 80% on its quiz.
+  *Shorten* shows a short lesson with a "Show the full lesson" button. Mini-lessons are reading
+  and never lock anything.
+- **Fallback** (no key, offline, free limit, errors, invalid answer) is labelled "Based on local
+  rules". It uses a rule-based diagnosis from the answer records:
+  - weak: a recent wrong answer, and either the latest answer on that skill was wrong or mastery
+    is below 50
+  - strong: the latest answer was right and at most a quarter were wrong
+  - "Recent mistakes" instead of misconceptions
+  - the unchanged path plus a mini-lesson for up to two weak skills
+  - local rules never shorten or skip a stage
+- **Labels:** AI output is labelled "AI analysis" and "AI-personalized plan".
+- **Where it shows:**
+  - The path page has a "Mentor analysis" panel, a "What changed and why" note (Gemini's note
+    plus the computed differences) and the **Your plan** list with Added, Shortened and Skippable
+    badges and a reason for each item.
+  - After a passed quiz, the stage page shows the updated analysis.
+  - After a failed quiz, the stage page shows the rule-based mentor feedback, because no request
+    is sent then.
+- **Quizzes:** the latest diagnosis (weak skills and misconceptions) is added to the Gemini quiz
+  request, so questions target them.
+
+### Learning data (local demo of the data flywheel)
+
+- **Misconception knowledge base** (`src/lib/journey/misconceptions.ts`): 21 prewritten, bilingual
+  misconceptions, for example a reversed LED, a forgotten current-limiting resistor or a motor on an
+  Arduino pin. Each has an ID, a skill tag, a description and a short correction. Wrong options in
+  the local bank are mapped to them by skill and option text. A test checks that every mapping
+  points at a real wrong option.
+- **Local retrieval:** each Gemini diagnosis, plan and quiz request includes only the misconceptions
+  behind the learner's recent wrong answers. Exact matches come first, then one per skill for
+  unmatched wrong answers. There are at most 4 (3 for quizzes), limited to the skills the request
+  may use.
+- **Few-shot examples:** the mentor request gets up to 3 relevant bank questions and one short
+  example diagnosis. The quiz request gets 2 style examples, preferring questions the learner has
+  already seen, so a copied one is rejected as a repeat.
+- **Learning insights** (`/insights`, sidebar "Learning Insights"): plain counts over Student A and
+  Student B on this device, labelled "Local demo data — in the full platform this is aggregated
+  across all students". It shows:
+  - the most common misconceptions
+  - the hardest questions (lowest correct rate)
+  - which re-explanations (prewritten or Gemini, shown before a retry) were followed by a pass
+
+  No AI is used for this screen.
+- **Export:** "Export anonymized JSON" downloads answer records and outcomes in the format
+  `aipm.learning-records` v1:
+  - learners as `learner-1`, `learner-2`
+  - level, project ID and parts
+  - mastery and stage results
+  - every attempt with its score and plan kind
+  - every answer with the chosen and correct option and its misconception ID
+
+  Names, project titles and descriptions are left out, and no API key is included.
+
 ### Learning journey (demo content)
 
 - **Paths:** fully written for traffic light, parking sensor and automatic irrigation
@@ -154,8 +240,14 @@ All suggestions go through `suggestParts(description)` in `src/lib/suggest/index
 - Datasheet links point to external manufacturer sites and need an internet connection. Parts
   without a confirmed document say so instead of linking a guess.
 - The DM Sans web font loads from Google Fonts when online. Offline, the system font is used.
-- The AI mentor chat, adaptive learning, quizzes, external 3D search and AI model generation aren't
-  part of this prototype yet.
+- The mentor analysis is checked for structure, evidence, skills, stages and part names, but
+  whether a stated misconception is really what the learner thinks can't be verified
+  automatically. With few answers (after the level check, 3) it says its confidence is low.
+- Plans can't reorder stages: each stage requires the one before it. A failed quiz updates the
+  rule-based feedback but not the AI analysis; that updates after the stage is completed (one
+  request per completed stage).
+- The AI mentor chat, external 3D search and AI model generation aren't part of this prototype
+  yet.
 
 ## Project structure
 

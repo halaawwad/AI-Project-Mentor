@@ -16,7 +16,10 @@ import {
 } from "lucide-react";
 import { DemoBadge, JourneyLayout } from "@/components/journey/JourneyUi";
 import { PartLinks } from "@/components/journey/PartLinks";
+import { ActionBadge, InsightSourceLabel, MentorAnalysisPanel, RemedialCard, WhatChanged } from "@/components/journey/Mentor";
 import { PersonalSourceLabel, WhyThisQuizCard } from "@/components/journey/Personalization";
+import { effectivePlan, latestInsight, planForStage } from "@/lib/journey/mentor";
+import { useMentorInsight } from "@/lib/journey/useMentor";
 import { Button } from "@/components/ui/button";
 import { usePartPreviews } from "@/lib/lab/usePartPreviews";
 import { gradeQuiz, mentorFeedback, stageStatuses, type QuizGrade } from "@/lib/journey/grading";
@@ -89,6 +92,7 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
   const [quiz, setQuiz] = useState<PersonalizedQuiz | null>(cached);
   const [answers, setAnswers] = useState<(number | null)[]>([]);
   const [grade, setGrade] = useState<QuizGrade | null>(null);
+  const [fullLesson, setFullLesson] = useState(false);
   const inFlight = useRef(false);
   const next = stages[index + 1];
 
@@ -126,6 +130,11 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
   const lang = journey.language;
   const lesson = stageText(stage, lang);
   const lessonDir = lang === "ar" ? "rtl" : "ltr";
+  // The personalized plan only changes how the lesson is shown; the quiz and gating stay the same.
+  const shownInsight = latestInsight(journey);
+  const { item: planItem, remedials } = planForStage(effectivePlan(stages, shownInsight), stage.id);
+  const planDir = shownInsight?.language === "ar" ? "rtl" : "ltr";
+  const adapted = !progress?.passed && (planItem?.action === "shorten" || planItem?.action === "skippable");
   // Local questions carry both languages; Gemini questions are in the quiz's own language.
   const shown = (question: Question) => questionText(question, lang);
 
@@ -137,6 +146,16 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
       arabic={stage.title.ar}
       actions={<DemoBadge generated={stage.source === "generated"} />}
     >
+      {!progress?.passed && !!remedials.length && (
+        <section className="glass-panel space-y-2 rounded-[22px] p-5" aria-label="Mini-lessons before this stage">
+          <h2 className="text-sm font-bold">
+            Before this stage <span dir="rtl" className="font-normal">· قبل هذه المرحلة</span>
+          </h2>
+          {remedials.map((item) => (
+            <RemedialCard key={item.target} item={item} stages={stages} language={shownInsight?.language ?? lang} />
+          ))}
+        </section>
+      )}
       <section className="glass-panel rounded-[22px] p-5" aria-label="Lesson">
         <h2 className="flex items-center gap-2 text-sm font-bold">
           <Target size={16} /> Goal <span dir="rtl" className="font-normal">· الهدف</span>
@@ -144,12 +163,29 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
         <p dir={lessonDir} className="mt-1 text-sm">
           {lesson.goal}
         </p>
-        <h2 className="mt-4 flex items-center gap-2 text-sm font-bold">
+        <h2 className="mt-4 flex flex-wrap items-center gap-2 text-sm font-bold">
           <BookOpen size={16} /> Explanation <span dir="rtl" className="font-normal">· الشرح</span>
+          {adapted && planItem && <ActionBadge action={planItem.action} />}
         </h2>
-        <p dir={lessonDir} className="mt-1 max-w-4xl text-sm leading-7">
-          {lesson.explanation}
-        </p>
+        {adapted && planItem && (
+          <p dir={planDir} className="mt-1 text-xs text-muted-foreground">
+            {planItem.reason}{" "}
+            {planItem.action === "skippable" &&
+              (lang === "ar"
+                ? `يمكنك تخطي الدرس، لكن عليك اجتياز الاختبار بنسبة ${PASS_MARK}% لفتح المرحلة التالية.`
+                : `You can skip the lesson, but you still need ${PASS_MARK}% on the quiz to unlock the next stage.`)}
+          </p>
+        )}
+        {(!adapted || fullLesson || planItem?.action === "shorten") && (
+          <p dir={lessonDir} className="mt-1 max-w-4xl text-sm leading-7">
+            {adapted && !fullLesson ? shortLesson(lesson.explanation) : lesson.explanation}
+          </p>
+        )}
+        {adapted && (
+          <Button size="sm" variant="ghost" className="mt-1" aria-expanded={fullLesson} onClick={() => setFullLesson(!fullLesson)}>
+            {fullLesson ? "Show less · عرض أقل" : "Show the full lesson · اعرض الدرس كاملاً"}
+          </Button>
+        )}
         {journey.level === "advanced" && !progress?.passed && (
           <p className="mt-2 text-[11px] text-muted-foreground">Advanced level: you can go straight to the quiz.</p>
         )}
@@ -283,12 +319,34 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
               </div>
             )}
           </div>
-          {!grade.passed && (
+          {grade.passed ? (
+            <StageMentor stages={stages} language={lang} />
+          ) : (
             <MentorPanel stage={stage} quiz={quiz} grade={grade} language={lang} onNext={() => void prepare()} />
           )}
         </section>
       )}
     </JourneyLayout>
+  );
+}
+
+/** First sentences of a lesson, for a stage the plan shortened. */
+function shortLesson(text: string) {
+  const sentences = text.split(/(?<=[.!?؟])\s+/);
+  return sentences.length > 2 ? `${sentences.slice(0, 2).join(" ")} …` : text;
+}
+
+/** After a completed stage: the updated analysis and plan (one Gemini request per completed stage). */
+function StageMentor({ stages, language }: { stages: Stage[]; language: Language }) {
+  const mentor = useMentorInsight(stages);
+  return (
+    <>
+      <MentorAnalysisPanel mentor={mentor} language={language} />
+      <WhatChanged mentor={mentor} stages={stages} />
+      <Button variant="secondary" asChild>
+        <Link to="/journey">See your updated plan · اعرض خطتك المحدّثة</Link>
+      </Button>
+    </>
   );
 }
 
@@ -309,9 +367,19 @@ function MentorPanel({
   const dir = language === "ar" ? "rtl" : "ltr";
   return (
     <div className="glass-panel rounded-[22px] p-5" aria-label="Mentor feedback">
-      <h2 className="flex items-center gap-2 text-base font-bold">
-        <Sparkles size={17} /> Mentor feedback <span dir="rtl" className="font-normal">· ملاحظات المرشد</span>
-      </h2>
+      <div className="flex flex-wrap items-center gap-2">
+        <h2 className="flex items-center gap-2 text-base font-bold">
+          <Sparkles size={17} /> Mentor feedback <span dir="rtl" className="font-normal">· ملاحظات المرشد</span>
+        </h2>
+        <InsightSourceLabel source="local" kind="analysis" />
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        The AI analysis and plan update when you complete this stage (one Gemini request per completed stage on the free
+        tier). Its latest findings already steer your next quiz.
+        <span dir="rtl" className="block">
+          يتحدّث التحليل والخطة بالذكاء الاصطناعي عند إكمال هذه المرحلة (طلب واحد لكل مرحلة مكتملة). وتوجّه آخر نتائجه اختبارك التالي.
+        </span>
+      </p>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <div className="glass-inset rounded-xl p-3">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">
