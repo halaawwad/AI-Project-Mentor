@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { ArrowRight, CheckCircle2, CircleDot, Loader2, Lock, PackageSearch, Trophy } from "lucide-react";
+import { StillWorking } from "@/components/AiLabel";
 import { DemoBadge, JourneyLayout, ResetDemoButton } from "@/components/journey/JourneyUi";
 import { ActionBadge, InsightSourceLabel, MentorAnalysisPanel, RemedialCard, WhatChanged } from "@/components/journey/Mentor";
 import { SkillsPanel } from "@/components/journey/Personalization";
@@ -105,7 +106,7 @@ export function JourneyPage() {
           ) : (
             mentor.preparing && (
               <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <Loader2 className="animate-spin" size={12} /> Preparing your plan… · جارٍ تجهيز خطتك…
+                <Loader2 className="animate-spin" size={12} /> Preparing your plan… · جارٍ تجهيز خطتك… <StillWorking active />
               </span>
             )
           )}

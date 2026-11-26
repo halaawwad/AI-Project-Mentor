@@ -1,6 +1,7 @@
 export const DEFAULT_MODEL = "gemini-3.5-flash";
-/** Upper bound for the single suggestion request (no automatic retries). */
-export const DEFAULT_TIMEOUT_MS = 30_000;
+/** Upper bound for one Gemini request (no automatic retries). The UI says "still working" after 15 s. */
+export const DEFAULT_TIMEOUT_MS = 90_000;
+export const STILL_WORKING_MS = 15_000;
 
 export interface AiConfig {
   apiKey: string;

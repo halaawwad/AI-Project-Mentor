@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from "react";
 import { catalogByKey } from "@/lib/componentCatalog";
+import { LEGACY_KEYS } from "@/lib/learner";
 import { readLocal, removeLocal, STORAGE_KEYS, writeLocal } from "@/lib/storage";
 import { emptyHistory, initialProfile, MAX_ANSWER_RECORDS, updateProfileAfterQuiz } from "./adaptive";
 import { recordAttempt, type QuizGrade } from "./grading";
@@ -29,14 +30,6 @@ import {
 
 const LEVELS: Level[] = ["beginner", "intermediate", "advanced"];
 const PLAN_KINDS: QuizPlan["kind"][] = ["first", "retry", "next-stage", "practice"];
-export type LearnerId = "a" | "b";
-export const LEARNERS: { id: LearnerId; en: string; ar: string }[] = [
-  { id: "a", en: "Student A", ar: "الطالب أ" },
-  { id: "b", en: "Student B", ar: "الطالب ب" },
-];
-/** Each demo learner has a separate journey; Student A keeps the original key. */
-export const journeyKey = (learner: LearnerId) =>
-  learner === "a" ? STORAGE_KEYS.journey : `${STORAGE_KEYS.journey}.learner-b`;
 
 export const emptyJourney = (language: Language = "ar"): JourneyState => ({
   version: 1,
@@ -274,6 +267,8 @@ function sanitizeMentor(raw: unknown): MentorState | null {
       isRecord(prev) && prevItems && typeof prev["checkpoint"] === "string" && (prev["source"] === "ai" || prev["source"] === "local")
         ? { checkpoint: prev["checkpoint"], source: prev["source"], items: prevItems }
         : null,
+    // The path applies the order only after checking it against the stages and progress again.
+    order: Array.isArray(raw["order"]) && raw["order"].every((id) => typeof id === "string") ? (raw["order"] as string[]) : null,
   };
 }
 
@@ -330,48 +325,37 @@ export function sanitizeJourney(raw: Record<string, unknown>): JourneyState {
   return state;
 }
 
-// In-memory copies: the journey keeps working for this session even if storage is blocked.
-let active: LearnerId | null = null;
+// In-memory copy: the journey keeps working for this session even if storage is blocked.
 let memory: JourneyState | null = null;
+let migrated = false;
 const listeners = new Set<() => void>();
 const notify = () => listeners.forEach((listener) => listener());
 
-export function activeLearner(): LearnerId {
-  if (!active) active = readLocal<string>(STORAGE_KEYS.activeLearner, "a", (v) => v === "a" || v === "b") === "b" ? "b" : "a";
-  return active;
-}
-
-/** Switches the demo learner; each learner has a separate journey and profile. */
-export function switchLearner(learner: LearnerId) {
-  active = learner;
-  memory = null;
-  try {
-    writeLocal(STORAGE_KEYS.activeLearner, learner);
-  } catch {
-    /* the switch still works for this session */
-  }
-  notify();
+/**
+ * One-time migration from the removed two-learner demo: Student A's journey is already stored
+ * under the main journey key and is kept as is (sanitized on read like any saved journey).
+ * Student B's journey and the learner switch setting are removed. Removing never throws, so
+ * invalid or partial old data can't break loading.
+ */
+export function migrateSingleLearner() {
+  removeLocal(LEGACY_KEYS.learnerBJourney);
+  removeLocal(LEGACY_KEYS.activeLearner);
 }
 
 /**
- * Reads the active learner's saved journey. Data that isn't a version-1 object is reported as
- * unreadable and left untouched (the storage notice offers a reset); partly invalid data is sanitized.
+ * Reads the learner's saved journey. Data that isn't a version-1 object is reported as unreadable
+ * and left untouched (the storage notice offers a reset); partly invalid data is sanitized.
  */
 export function readJourney(): JourneyState {
   if (!memory) {
-    const raw = readLocal<unknown>(journeyKey(activeLearner()), null, (v) => isRecord(v) && v["version"] === 1);
+    if (!migrated) {
+      migrated = true;
+      migrateSingleLearner();
+    }
+    const raw = readLocal<unknown>(STORAGE_KEYS.journey, null, (v) => isRecord(v) && v["version"] === 1);
     memory = isRecord(raw) ? sanitizeJourney(raw) : emptyJourney();
   }
   return memory;
-}
-
-/** Every demo learner's journey on this device (the active one from memory), for local insights. */
-export function readLearnerJourneys(): { learner: LearnerId; state: JourneyState }[] {
-  return LEARNERS.map(({ id }) => {
-    if (id === activeLearner()) return { learner: id, state: readJourney() };
-    const raw = readLocal<unknown>(journeyKey(id), null, (v) => isRecord(v) && v["version"] === 1);
-    return { learner: id, state: isRecord(raw) ? sanitizeJourney(raw) : emptyJourney() };
-  });
 }
 
 /** Saves to memory and, when possible, to localStorage. Returns false if storage failed. */
@@ -379,7 +363,7 @@ export function saveJourney(next: JourneyState): boolean {
   memory = next;
   notify();
   try {
-    writeLocal(journeyKey(activeLearner()), next);
+    writeLocal(STORAGE_KEYS.journey, next);
     return true;
   } catch {
     return false;
@@ -389,13 +373,19 @@ export function saveJourney(next: JourneyState): boolean {
 export const updateJourney = (change: (state: JourneyState) => JourneyState) =>
   saveJourney(change(readJourney()));
 
-/** "Reset demo": clears both learners' journeys and the BOM (lab circuits are kept). */
+/** "Reset demo": clears the journey and the BOM. Lab circuits and the AI demo cache are kept. */
 export function resetDemo() {
-  for (const learner of LEARNERS) removeLocal(journeyKey(learner.id));
+  removeLocal(STORAGE_KEYS.journey);
   removeLocal(STORAGE_KEYS.bom);
-  removeLocal(STORAGE_KEYS.activeLearner);
-  active = "a";
+  migrateSingleLearner();
   memory = null;
+  notify();
+}
+
+/** Drops the in-memory journey so the next read comes from localStorage (a reload, in tests). */
+export function reloadJourney() {
+  memory = null;
+  migrated = false;
   notify();
 }
 
@@ -406,7 +396,6 @@ const subscribe = (listener: () => void) => {
   };
 };
 export const useJourney = () => useSyncExternalStore(subscribe, readJourney, readJourney);
-export const useActiveLearner = () => useSyncExternalStore(subscribe, activeLearner, activeLearner);
 
 /** Idea entry: approved parts from Describe Project; a known project gets its written path. */
 export function startIdeaJourney(description: string, parts: ProjectPart[]) {
@@ -424,29 +413,51 @@ export function startIdeaJourney(description: string, parts: ProjectPart[]) {
   });
 }
 
-/** Learning entry: a chosen learning project with its own parts list. */
-export function startLearningJourney(id: LearningProjectId) {
+/** Pure: a fresh journey for a learning project. */
+export function learningJourney(id: LearningProjectId, language: Language): JourneyState | null {
   const project = learningProjectById(id);
-  if (!project) return false;
-  return saveJourney({
-    ...emptyJourney(readJourney().language),
+  if (!project) return null;
+  return {
+    ...emptyJourney(language),
     entry: "learning",
     project: { id: project.id, title: project.title, description: project.summary.en },
     parts: project.parts.map((p) => ({ ...p })),
-  });
+  };
 }
 
-/** Setting a level starts the path over and creates the learner profile from the answers. */
-export const setJourneyLevel = (level: Level, levelScore: number, levelAnswers: (number | null)[] = []) =>
-  updateJourney((state) => ({
+/** Learning entry: a chosen learning project with its own parts list. */
+export function startLearningJourney(id: LearningProjectId) {
+  const next = learningJourney(id, readJourney().language);
+  return next ? saveJourney(next) : false;
+}
+
+/** Pure: a level applied to a journey; `difficulty` overrides the level's default (AI level check). */
+export const withLevel = (
+  state: JourneyState,
+  level: Level,
+  levelScore: number,
+  levelAnswers: (number | null)[] = [],
+  difficulty?: Difficulty,
+): JourneyState => {
+  const profile = initialProfile(level, levelAnswers);
+  return {
     ...state,
     level,
     levelScore,
     progress: {},
-    profile: initialProfile(level, levelAnswers),
+    profile: difficulty ? { ...profile, difficulty } : profile,
     // A new level check starts a new plan; the first diagnosis is made for it.
     mentor: null,
-  }));
+  };
+};
+
+/** Setting a level starts the path over and creates the learner profile from the answers. */
+export const setJourneyLevel = (
+  level: Level,
+  levelScore: number,
+  levelAnswers: (number | null)[] = [],
+  difficulty?: Difficulty,
+) => updateJourney((state) => withLevel(state, level, levelScore, levelAnswers, difficulty));
 
 /** Caches a mentor analysis and plan; a new checkpoint keeps the old plan for "What changed". */
 export const saveMentorInsight = (insight: MentorInsight) =>
@@ -462,21 +473,23 @@ export const savePendingQuiz = (quiz: PersonalizedQuiz) =>
     return { ...state, profile: { ...profile, history: { ...profile.history, [quiz.stageId]: { ...history, pending: quiz } } } };
   });
 
+/** Pure: a graded quiz applied to a journey (gating progress plus the learner profile). */
+export const withQuizResult = (
+  state: JourneyState,
+  stageId: string,
+  quiz: PersonalizedQuiz,
+  answers: (number | null)[],
+  grade: QuizGrade,
+): JourneyState => ({
+  ...state,
+  progress: recordAttempt(state.progress, stageId, grade),
+  profile: updateProfileAfterQuiz(state.profile ?? initialProfile(state.level ?? "intermediate"), stageId, quiz, answers, grade),
+});
+
 /** Records a graded quiz: gating progress plus the learner profile (mastery, difficulty, history). */
 export const recordQuizResult = (
   stageId: string,
   quiz: PersonalizedQuiz,
   answers: (number | null)[],
   grade: QuizGrade,
-) =>
-  updateJourney((state) => ({
-    ...state,
-    progress: recordAttempt(state.progress, stageId, grade),
-    profile: updateProfileAfterQuiz(
-      state.profile ?? initialProfile(state.level ?? "intermediate"),
-      stageId,
-      quiz,
-      answers,
-      grade,
-    ),
-  }));
+) => updateJourney((state) => withQuizResult(state, stageId, quiz, answers, grade));

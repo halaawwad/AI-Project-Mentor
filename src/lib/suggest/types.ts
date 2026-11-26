@@ -22,6 +22,8 @@ export type FallbackReason =
   | "timeout"
   | "network"
   | "unavailable"
+  | "server-error"
+  | "model-not-found"
   | "bad-request"
   | "blocked"
   | "empty"

@@ -26,6 +26,7 @@ export async function suggestParts(
       client: options.client ?? createAiClient(config.apiKey),
       model: config.model,
       timeoutMs: config.timeoutMs,
+      apiKey: config.apiKey,
     });
     return {
       source: "ai",

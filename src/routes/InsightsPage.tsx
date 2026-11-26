@@ -5,7 +5,9 @@ import { JourneyLayout } from "@/components/journey/JourneyUi";
 import { Button } from "@/components/ui/button";
 import { skillLabel } from "@/lib/journey/i18n";
 import { aggregateInsights, anonymizedExport } from "@/lib/journey/insights";
-import { readLearnerJourneys, useJourney } from "@/lib/journey/store";
+import type { LearnerData } from "@/lib/journey/insights";
+import { useJourney } from "@/lib/journey/store";
+import { LEARNER_ID } from "@/lib/learner";
 import type { Language } from "@/lib/journey/types";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
@@ -24,13 +26,14 @@ function downloadJson(filename: string, data: unknown) {
 
 const t = (language: Language, en: string, ar: string) => (language === "ar" ? ar : en);
 
-/** Demo screen for the data flywheel: plain counts over the learners saved on this device. */
+/** Demo screen for the data flywheel: plain counts over the learner's data saved on this device. */
 export function InsightsPage() {
   useDocumentTitle("Learning insights | AiPM");
   const journey = useJourney(); // re-render when the active learner's data changes
   const lang = journey.language;
   const dir = lang === "ar" ? "rtl" : "ltr";
-  const data = readLearnerJourneys();
+  const data: LearnerData[] = [{ learner: LEARNER_ID, state: journey }];
+  const stagesPassed = Object.values(journey.progress).filter((p) => p.passed).length;
   const insights = aggregateInsights(data, lang);
   const [exported, setExported] = useState(false);
 
@@ -60,10 +63,10 @@ export function InsightsPage() {
           بيانات تجريبية محلية — في المنصة الكاملة تُجمع هذه البيانات من جميع الطلاب
         </p>
         <p className="mt-1 text-[11px] text-muted-foreground">
-          Plain counts over Student A and Student B on this device, computed in the browser; no AI is used here. The
+          Plain counts over your answers and quiz attempts on this device, computed in the browser; no AI is used here. The
           export leaves out names, project titles and descriptions, and contains no API key.
           <span dir="rtl" className="block">
-            عدّ بسيط لبيانات الطالب أ والطالب ب على هذا الجهاز داخل المتصفح، دون ذكاء اصطناعي. لا يتضمن التصدير الأسماء أو
+            عدّ بسيط لإجاباتك ومحاولاتك على هذا الجهاز داخل المتصفح، دون ذكاء اصطناعي. لا يتضمن التصدير الأسماء أو
             عناوين المشاريع أو أوصافها أو مفتاح API.
           </span>
         </p>
@@ -76,7 +79,7 @@ export function InsightsPage() {
 
       <section className="grid gap-3 sm:grid-cols-4" aria-label="Totals">
         {[
-          [insights.learners, "Learners", "متعلمون"],
+          [stagesPassed, "Stages passed", "مراحل مجتازة"],
           [insights.answers, "Answers recorded", "إجابات مسجلة"],
           [insights.wrongAnswers, "Wrong answers", "إجابات خاطئة"],
           [insights.attempts, "Quiz attempts", "محاولات اختبار"],
@@ -92,7 +95,7 @@ export function InsightsPage() {
 
       {!insights.answers ? (
         <section className="glass-panel rounded-[22px] p-6 text-sm">
-          <p>No answers saved on this device yet. Take the level check and a few quizzes as Student A and Student B.</p>
+          <p>No answers saved on this device yet. Take the level check and a few quizzes first.</p>
           <Button className="mt-3" asChild>
             <Link to="/journey">Go to the learning journey</Link>
           </Button>
@@ -114,7 +117,7 @@ export function InsightsPage() {
                     <p className="text-xs text-muted-foreground">✓ {m.misconception.correction[lang]}</p>
                     <p className="mt-1 text-[11px] text-muted-foreground">
                       {skillLabel(m.misconception.skill, lang)} ·{" "}
-                      {t(lang, `${m.count} wrong answers · ${m.learners} of ${insights.learners} learners`, `${m.count} إجابات خاطئة · ${m.learners} من ${insights.learners} متعلمين`)}{" "}
+                      {t(lang, `${m.count} wrong answers`, `${m.count} إجابات خاطئة`)}{" "}
                       · <code dir="ltr">{m.misconception.id}</code>
                     </p>
                   </li>

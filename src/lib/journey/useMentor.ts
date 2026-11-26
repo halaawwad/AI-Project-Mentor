@@ -1,10 +1,11 @@
 import { useEffect } from "react";
+import { LEARNER_ID } from "@/lib/learner";
 import { cachedInsight, latestInsight, mentorCheckpoint } from "./mentor";
 import { prepareMentorInsight } from "./personalize";
-import { activeLearner, readJourney, saveMentorInsight, useActiveLearner, useJourney } from "./store";
+import { readJourney, saveMentorInsight, useJourney } from "./store";
 import type { Stage } from "./types";
 
-/** One request at a time per learner, checkpoint and language, shared by every screen. */
+/** One request at a time per checkpoint and language, shared by every screen. */
 const inFlight = new Map<string, Promise<void>>();
 
 /**
@@ -13,17 +14,16 @@ const inFlight = new Map<string, Promise<void>>();
  */
 export function ensureMentorInsight(stages: Stage[], force = false): Promise<void> {
   const state = readJourney();
-  const learner = activeLearner();
   const checkpoint = mentorCheckpoint(state, stages);
   if (!checkpoint || (!force && cachedInsight(state, checkpoint))) return Promise.resolve();
-  const key = `${learner}|${checkpoint}|${state.language}`;
+  const key = `${checkpoint}|${state.language}`;
   const running = inFlight.get(key);
   if (running) return running;
-  const run = prepareMentorInsight({ state, stages, learnerId: learner, force })
+  const run = prepareMentorInsight({ state, stages, learnerId: LEARNER_ID, force })
     .then((insight) => {
       const now = readJourney();
-      // Drop the result if the learner, checkpoint or language changed in the meantime.
-      if (!insight || activeLearner() !== learner || now.language !== insight.language) return;
+      // Drop the result if the checkpoint or language changed in the meantime (or the demo was reset).
+      if (!insight || now.language !== insight.language) return;
       if (mentorCheckpoint(now, stages) !== insight.checkpoint) return;
       saveMentorInsight(insight);
     })
@@ -38,14 +38,13 @@ export function ensureMentorInsight(stages: Stage[], force = false): Promise<voi
  */
 export function useMentorInsight(stages: Stage[]) {
   const journey = useJourney();
-  const learner = useActiveLearner();
   const checkpoint = mentorCheckpoint(journey, stages);
   const insight = checkpoint ? cachedInsight(journey, checkpoint) : null;
   const missing = Boolean(checkpoint && !insight);
   useEffect(() => {
     if (missing) void ensureMentorInsight(stages);
     // `stages` is rebuilt on every render; the checkpoint and language identify the request.
-  }, [missing, checkpoint, learner, journey.language]);
+  }, [missing, checkpoint, journey.language]);
   const shown = insight ?? latestInsight(journey);
   return {
     checkpoint,

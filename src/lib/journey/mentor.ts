@@ -47,6 +47,8 @@ export interface MentorContext {
   projectParts: string[];
   /** The plan before this checkpoint, if any. */
   previous: MentorState["previous"];
+  /** Stage order already fixed at this checkpoint (another language's plan); null if none. */
+  lockedOrder: string[] | null;
 }
 
 /** Skill tags a plan's remedial items may use: the skills taught in the path. */
@@ -59,7 +61,16 @@ export const diagnosisSkills = (stages: Stage[]) =>
 export function evidence(profile: LearnerProfile) {
   const assessed = new Set([...Object.keys(profile.mastery), ...profile.answers.map((r) => r.skill)]);
   const wrong = new Set(profile.answers.filter((r) => !r.isCorrect).map((r) => r.skill));
-  return { assessed, wrong };
+  const right = new Set(profile.answers.filter((r) => r.isCorrect).map((r) => r.skill));
+  const mastery = (skill: string) => profile.mastery[skill];
+  return {
+    assessed,
+    wrong,
+    /** A weak skill needs a recent wrong answer or mastery below the starting baseline. */
+    supportsWeak: (skill: string) => wrong.has(skill) || (mastery(skill) ?? profile.baseline) < profile.baseline,
+    /** A strength needs a recent right answer or mastery above the starting baseline. */
+    supportsStrength: (skill: string) => right.has(skill) || (mastery(skill) ?? profile.baseline) > profile.baseline,
+  };
 }
 
 /**
@@ -104,8 +115,11 @@ export function withInsight(mentor: MentorState | null, insight: MentorInsight):
     checkpoint: insight.checkpoint,
     insights: [insight],
     previous: previousPlanFor(mentor, insight.checkpoint, insight.language),
+    order: stageOrder(insight.plan.items),
   };
 }
+
+export const stageOrder = (items: PlanItem[]) => items.filter((i) => i.kind === "stage").map((i) => i.target);
 
 /**
  * The plan's items if they still match the path exactly (every stage once, in path order);
@@ -128,7 +142,8 @@ export function planForStage(items: PlanItem[] | null, stageId: string) {
 
 export type PlanChange =
   | { kind: "added-remedial" | "removed-remedial"; skill: string }
-  | { kind: "action"; stageId: string; from: PlanAction; to: PlanAction };
+  | { kind: "action"; stageId: string; from: PlanAction; to: PlanAction }
+  | { kind: "order"; from: string[]; to: string[] };
 
 /** What changed between two plans: remedial items added or removed, and stage actions changed. */
 export function planChanges(previous: PlanItem[], next: PlanItem[]): PlanChange[] {
@@ -136,7 +151,11 @@ export function planChanges(previous: PlanItem[], next: PlanItem[]): PlanChange[
   const before = remedials(previous);
   const after = remedials(next);
   const actions = new Map(previous.filter((i) => i.kind === "stage").map((i) => [i.target, i.action]));
+  const from = stageOrder(previous);
+  const to = stageOrder(next);
+  const reordered = from.length === to.length && from.some((id, i) => id !== to[i]);
   return [
+    ...(reordered ? [{ kind: "order" as const, from, to }] : []),
     ...after.filter((s) => !before.includes(s)).map((skill) => ({ kind: "added-remedial" as const, skill })),
     ...before.filter((s) => !after.includes(s)).map((skill) => ({ kind: "removed-remedial" as const, skill })),
     ...next
@@ -232,7 +251,9 @@ export function describeChanges(changes: PlanChange[], stages: Stage[], language
   const title = (id: string) => stages.find((s) => s.id === id)?.title[language] ?? id;
   return changes
     .map((c) =>
-      c.kind === "action"
+      c.kind === "order"
+        ? t(language, `New stage order: ${c.to.map(title).join(" → ")}.`, `ترتيب جديد للمراحل: ${c.to.map(title).join(" ← ")}.`)
+        : c.kind === "action"
         ? t(
             language,
             `${title(c.stageId)}: ${actionNames[c.from].en} → ${actionNames[c.to].en}.`,

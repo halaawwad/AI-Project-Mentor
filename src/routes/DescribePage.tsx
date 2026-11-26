@@ -14,6 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { StillWorking } from "@/components/AiLabel";
 import { AppSidebar } from "@/components/AppSidebar";
 import { JourneyIndicator } from "@/components/journey/JourneyUi";
 import { Button } from "@/components/ui/button";
@@ -188,6 +189,7 @@ export function DescribePage() {
                 {loading ? <Loader2 className="animate-spin" /> : <Sparkles />}
                 {loading ? "Finding parts…" : "Suggest parts"}
               </Button>
+              <StillWorking active={loading} />
               <span className="text-[11px] font-semibold text-muted-foreground">
                 <Lightbulb size={12} className="mr-1 inline" />
                 Examples · أمثلة:

@@ -5,7 +5,9 @@ import {
   BookOpen,
   CheckCircle2,
   ClipboardCheck,
+  Lightbulb,
   Loader2,
+  Wrench,
   Lock,
   RotateCcw,
   Sparkles,
@@ -16,25 +18,23 @@ import {
 } from "lucide-react";
 import { DemoBadge, JourneyLayout } from "@/components/journey/JourneyUi";
 import { PartLinks } from "@/components/journey/PartLinks";
-import { ActionBadge, InsightSourceLabel, MentorAnalysisPanel, RemedialCard, WhatChanged } from "@/components/journey/Mentor";
+import { ActionBadge, MentorAnalysisPanel, RemedialCard, WhatChanged } from "@/components/journey/Mentor";
 import { PersonalSourceLabel, WhyThisQuizCard } from "@/components/journey/Personalization";
 import { effectivePlan, latestInsight, planForStage } from "@/lib/journey/mentor";
+import { AiSourceLabel, FallbackReasonNote, StillWorking } from "@/components/AiLabel";
+import { useAiResult } from "@/lib/ai/useAi";
+import { prepareFeedback, type FeedbackContext } from "@/lib/journey/feedbackAi";
+import { cachedLesson, lessonContext, localLesson, prepareLesson, type LessonText } from "@/lib/journey/lessonAi";
 import { useMentorInsight } from "@/lib/journey/useMentor";
 import { Button } from "@/components/ui/button";
 import { usePartPreviews } from "@/lib/lab/usePartPreviews";
 import { gradeQuiz, mentorFeedback, stageStatuses, type QuizGrade } from "@/lib/journey/grading";
 import { buildPath } from "@/lib/journey/path";
 import { cachedQuiz, preparePersonalizedQuiz } from "@/lib/journey/personalize";
-import {
-  activeLearner,
-  readJourney,
-  recordQuizResult,
-  savePendingQuiz,
-  useActiveLearner,
-  useJourney,
-} from "@/lib/journey/store";
-import { difficultyLabel } from "@/lib/journey/adaptive";
-import { questionDir, questionText, skillLabel, stageText } from "@/lib/journey/i18n";
+import { readJourney, recordQuizResult, savePendingQuiz, useJourney } from "@/lib/journey/store";
+import { LEARNER_ID } from "@/lib/learner";
+import { difficultyLabel, initialProfile } from "@/lib/journey/adaptive";
+import { questionDir, questionText, skillLabel } from "@/lib/journey/i18n";
 import { PASS_MARK, type Language, type PersonalizedQuiz, type Question, type Stage } from "@/lib/journey/types";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
@@ -44,7 +44,6 @@ type Phase = "learn" | "preparing" | "brief" | "quiz" | "result";
 export function StagePage() {
   const { id } = useSearch({ from: "/journey/stage" });
   const journey = useJourney();
-  const learner = useActiveLearner();
   const stages = buildPath(journey);
   const index = stages.findIndex((stage) => stage.id === id);
   const stage = stages[index];
@@ -78,8 +77,8 @@ export function StagePage() {
       </JourneyLayout>
     );
 
-  // Remount per learner and stage so a learner switch never shows another learner's quiz.
-  return <StageContent key={`${learner}-${stage.id}`} stage={stage} index={index} stages={stages} />;
+  // Remount per stage so one stage's quiz state never carries over to another.
+  return <StageContent key={stage.id} stage={stage} index={index} stages={stages} />;
 }
 
 function StageContent({ stage, index, stages }: { stage: Stage; index: number; stages: Stage[] }) {
@@ -100,11 +99,8 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
     if (inFlight.current) return;
     inFlight.current = true;
     setPhase("preparing");
-    const learner = activeLearner();
     try {
-      const prepared = await preparePersonalizedQuiz({ state: readJourney(), stages, index, learnerId: learner });
-      // Ignore the result if the learner was switched while it was being prepared.
-      if (activeLearner() !== learner) return;
+      const prepared = await preparePersonalizedQuiz({ state: readJourney(), stages, index, learnerId: LEARNER_ID });
       savePendingQuiz(prepared);
       setQuiz(prepared);
       setGrade(null);
@@ -128,7 +124,15 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
     requestAnimationFrame(() => document.getElementById("stage-result")?.scrollIntoView({ block: "start" }));
   };
   const lang = journey.language;
-  const lesson = stageText(stage, lang);
+  const learnerId = LEARNER_ID;
+  // AI-written lesson for this learner (cached per stage, level and language).
+  const lessonCtx = lessonContext(journey, stage);
+  const aiLesson = useAiResult(
+    `lesson|${learnerId}|${stage.id}|${journey.level}|${lang}`,
+    () => prepareLesson({ learnerId, ctx: lessonCtx }),
+    () => cachedLesson(learnerId, lessonCtx),
+  );
+  const lesson: LessonText = aiLesson.value ?? localLesson(stage, lang);
   const lessonDir = lang === "ar" ? "rtl" : "ltr";
   // The personalized plan only changes how the lesson is shown; the quiz and gating stay the same.
   const shownInsight = latestInsight(journey);
@@ -157,6 +161,24 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
         </section>
       )}
       <section className="glass-panel rounded-[22px] p-5" aria-label="Lesson">
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          {aiLesson.value ? (
+            <AiSourceLabel source={aiLesson.value.source} />
+          ) : (
+            <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground" aria-busy="true">
+              <Loader2 size={12} className="animate-spin" /> Writing a lesson for you… · جارٍ كتابة درس لك…{" "}
+              <StillWorking active />
+            </span>
+          )}
+        </div>
+        {aiLesson.value && <FallbackReasonNote reason={aiLesson.value.fallbackReason} onRetry={aiLesson.retry} />}
+        {aiLesson.value?.source === "ai" && !!aiLesson.value.localFields?.length && (
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            From local content instead:{" "}
+            {aiLesson.value.localFields.map((f) => lessonFieldNames[f].en).join(", ")}{" "}
+            <span dir="rtl">· من المحتوى المحلي: {aiLesson.value.localFields.map((f) => lessonFieldNames[f].ar).join("، ")}</span>
+          </p>
+        )}
         <h2 className="flex items-center gap-2 text-sm font-bold">
           <Target size={16} /> Goal <span dir="rtl" className="font-normal">· الهدف</span>
         </h2>
@@ -186,6 +208,18 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
             {fullLesson ? "Show less · عرض أقل" : "Show the full lesson · اعرض الدرس كاملاً"}
           </Button>
         )}
+        <h2 className="mt-4 flex items-center gap-2 text-sm font-bold">
+          <Lightbulb size={16} /> Analogy <span dir="rtl" className="font-normal">· تشبيه</span>
+        </h2>
+        <p dir={lessonDir} className="mt-1 max-w-4xl text-sm leading-7">
+          {lesson.analogy}
+        </p>
+        <h2 className="mt-4 flex items-center gap-2 text-sm font-bold">
+          <Wrench size={16} /> Practice task <span dir="rtl" className="font-normal">· تمرين عملي</span>
+        </h2>
+        <p dir={lessonDir} className="mt-1 max-w-4xl text-sm">
+          {lesson.practiceTask}
+        </p>
         {journey.level === "advanced" && !progress?.passed && (
           <p className="mt-2 text-[11px] text-muted-foreground">Advanced level: you can go straight to the quiz.</p>
         )}
@@ -207,6 +241,9 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
             <Button disabled aria-busy="true">
               <Loader2 className="animate-spin" /> Preparing a quiz for you… · جارٍ تجهيز اختبارك…
             </Button>
+          )}
+          {phase === "preparing" && (
+            <StillWorking active />
           )}
           <span className="text-xs text-muted-foreground">
             {progress
@@ -322,13 +359,20 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
           {grade.passed ? (
             <StageMentor stages={stages} language={lang} />
           ) : (
-            <MentorPanel stage={stage} quiz={quiz} grade={grade} language={lang} onNext={() => void prepare()} />
+            <MentorPanel stage={stage} quiz={quiz} answers={answers} grade={grade} language={lang} onNext={() => void prepare()} />
           )}
         </section>
       )}
     </JourneyLayout>
   );
 }
+
+const lessonFieldNames: Record<keyof LessonText, { en: string; ar: string }> = {
+  goal: { en: "goal", ar: "الهدف" },
+  explanation: { en: "explanation", ar: "الشرح" },
+  analogy: { en: "analogy", ar: "التشبيه" },
+  practiceTask: { en: "practice task", ar: "التمرين العملي" },
+};
 
 /** First sentences of a lesson, for a stage the plan shortened. */
 function shortLesson(text: string) {
@@ -353,33 +397,75 @@ function StageMentor({ stages, language }: { stages: Stage[]; language: Language
 function MentorPanel({
   stage,
   quiz,
+  answers,
   grade,
   language,
   onNext,
 }: {
   stage: Stage;
   quiz: PersonalizedQuiz;
+  answers: (number | null)[];
   grade: QuizGrade;
   language: Language;
   onNext: () => void;
 }) {
+  const journey = useJourney();
+  const learnerId = LEARNER_ID;
   const feedback = mentorFeedback(stage, quiz, grade);
   const dir = language === "ar" ? "rtl" : "ltr";
+  // One Gemini request per failed attempt: the misconception behind each wrong answer.
+  const ctx: FeedbackContext = {
+    stage,
+    quiz,
+    answers,
+    profile: journey.profile ?? initialProfile(journey.level ?? "intermediate"),
+    language,
+    projectParts: journey.parts.map((p) => p.key),
+  };
+  const ai = useAiResult(`feedback|${learnerId}|${stage.id}|${quiz.id}|${answers.join(",")}|${language}`, () =>
+    prepareFeedback({ learnerId, ctx }),
+  );
+  const notes = ai.value;
   return (
     <div className="glass-panel rounded-[22px] p-5" aria-label="Mentor feedback">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="flex items-center gap-2 text-base font-bold">
           <Sparkles size={17} /> Mentor feedback <span dir="rtl" className="font-normal">· ملاحظات المرشد</span>
         </h2>
-        <InsightSourceLabel source="local" kind="analysis" />
+        {notes ? (
+          <AiSourceLabel source={notes.source} local="rules" />
+        ) : (
+          <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground" aria-busy="true">
+            <Loader2 size={12} className="animate-spin" /> Looking at your answers… · جارٍ النظر في إجاباتك…{" "}
+            <StillWorking active />
+          </span>
+        )}
       </div>
-      <p className="mt-1 text-[11px] text-muted-foreground">
-        The AI analysis and plan update when you complete this stage (one Gemini request per completed stage on the free
-        tier). Its latest findings already steer your next quiz.
-        <span dir="rtl" className="block">
-          يتحدّث التحليل والخطة بالذكاء الاصطناعي عند إكمال هذه المرحلة (طلب واحد لكل مرحلة مكتملة). وتوجّه آخر نتائجه اختبارك التالي.
-        </span>
-      </p>
+      {notes && (
+        <div className="mt-3 space-y-2">
+          <h3 className="text-sm font-semibold">
+            What went wrong <span dir="rtl" className="font-normal">· ما الذي حدث</span>
+          </h3>
+          <ul className="space-y-1.5">
+            {notes.mistakes.map((m) => {
+              const q = quiz.questions[m.index]!;
+              return (
+                <li key={m.index} dir={dir} className="glass-inset rounded-lg p-2.5 text-sm">
+                  <p className="text-[11px] text-muted-foreground">{questionText(q, language).prompt}</p>
+                  <p>{m.misconception}</p>
+                </li>
+              );
+            })}
+          </ul>
+          <p dir={dir} className="text-sm leading-7">
+            {notes.explanation}
+          </p>
+          <p dir={dir} className="flex items-start gap-1.5 text-sm">
+            <Wrench size={14} className="mt-1 shrink-0" /> {notes.practiceTask}
+          </p>
+          <FallbackReasonNote reason={notes.fallbackReason} onRetry={ai.retry} />
+        </div>
+      )}
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         <div className="glass-inset rounded-xl p-3">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">

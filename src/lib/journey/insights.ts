@@ -7,7 +7,8 @@ import { PASS_MARK, type JourneyState, type Language, type Question, type QuizSo
 
 /**
  * Local learning insights: plain counting over the answer records and attempts saved on this
- * device (Student A and Student B). No AI is involved.
+ * device (the learner; the function accepts several learners, as the full platform would). No AI is
+ * involved.
  */
 export interface LearnerData {
   learner: string;

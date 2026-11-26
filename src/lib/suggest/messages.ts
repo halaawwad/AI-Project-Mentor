@@ -30,6 +30,14 @@ export const fallbackMessages: Record<FallbackReason, { en: string; ar: string }
     en: "The Gemini API is temporarily unavailable. Try again later. Showing local demo suggestions for now.",
     ar: "خدمة Gemini API غير متاحة مؤقتاً. أعد المحاولة لاحقاً. تظهر اقتراحات تجريبية محلية مؤقتاً.",
   },
+  "server-error": {
+    en: "The Gemini API had a server error. Try again later. Showing local demo suggestions for now.",
+    ar: "حدث خطأ في خادم Gemini API. أعد المحاولة لاحقاً. تظهر اقتراحات تجريبية محلية مؤقتاً.",
+  },
+  "model-not-found": {
+    en: "The model in VITE_GEMINI_MODEL wasn't found or doesn't support this request. Check the model id. Showing local demo suggestions instead.",
+    ar: "لم يُعثر على النموذج المحدد في VITE_GEMINI_MODEL أو أنه لا يدعم هذا الطلب. تحقق من اسم النموذج. تظهر اقتراحات تجريبية محلية بدلاً منها.",
+  },
   "bad-request": {
     en: "The Gemini API rejected the request. Check that VITE_GEMINI_MODEL is a valid model id. Showing local demo suggestions instead.",
     ar: "رفض Gemini API الطلب. تأكد أن VITE_GEMINI_MODEL اسم نموذج صحيح. تظهر اقتراحات تجريبية محلية بدلاً منها.",

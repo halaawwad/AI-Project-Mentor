@@ -1,5 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
-import { BarChart3, Box, Cpu, GraduationCap, House, Package, Sparkles, X } from "lucide-react";
+import { BarChart3, Box, ClipboardCheck, Cpu, GraduationCap, House, Package, Sparkles, X } from "lucide-react";
 import { AipmBrand } from "@/components/AipmBrand";
 import { Button } from "@/components/ui/button";
 
@@ -9,6 +9,7 @@ export type AppSection =
   | "Describe Project"
   | "Learning Journey"
   | "Learning Insights"
+  | "Demo Readiness"
   | "Component Catalog"
   | "Bill of Materials"
   | "3D Lab";
@@ -17,6 +18,7 @@ const navigation = [
   { label: "Describe Project", icon: Sparkles, to: "/describe" },
   { label: "Learning Journey", icon: GraduationCap, to: "/journey" },
   { label: "Learning Insights", icon: BarChart3, to: "/insights" },
+  { label: "Demo Readiness", icon: ClipboardCheck, to: "/demo-readiness" },
   { label: "Component Catalog", icon: Cpu, to: "/catalog" },
   { label: "Bill of Materials", icon: Package, to: "/bom" },
   { label: "3D Lab", icon: Box, to: "/lab" },

@@ -184,6 +184,8 @@ export interface MentorState {
   insights: MentorInsight[];
   /** The plan of the previous checkpoint, for "What changed and why". */
   previous: { checkpoint: string; source: InsightSource; items: PlanItem[] } | null;
+  /** Stage order chosen at this checkpoint (validated); the path follows it while it stays safe. */
+  order: string[] | null;
 }
 
 /** What the adaptive rules decided for the next quiz. */

@@ -5,7 +5,8 @@ import { buildQuizPrompt, buildQuizSystemPrompt } from "../lib/journey/aiQuiz";
 import { buildGenericPath } from "../lib/journey/generic";
 import { gradeQuiz } from "../lib/journey/grading";
 import { hasArabic, skillLabelsAr } from "../lib/journey/i18n";
-import { aggregateInsights, anonymizedExport } from "../lib/journey/insights";
+import { aggregateInsights, anonymizedExport, type LearnerData } from "../lib/journey/insights";
+import { LEARNER_ID } from "../lib/learner";
 import { levelQuestions } from "../lib/journey/level";
 import { mentorCheckpoint } from "../lib/journey/mentor";
 import { buildMentorPrompt, buildMentorSystemPrompt } from "../lib/journey/mentorAi";
@@ -23,13 +24,13 @@ import { mentorContext, prepareMentorInsight } from "../lib/journey/personalize"
 import { basics, learningProjects } from "../lib/journey/projects";
 import {
   readJourney,
-  readLearnerJourneys,
+  reloadJourney,
+  saveJourney,
   recordQuizResult,
   resetDemo,
   setJourneyLevel,
   startIdeaJourney,
   startLearningJourney,
-  switchLearner,
 } from "../lib/journey/store";
 import type { AnswerRecord, PersonalizedQuiz, Question, Stage } from "../lib/journey/types";
 import type { AiClient } from "../lib/suggest/aiEngine";
@@ -214,7 +215,7 @@ describe("retrieval for Gemini requests", () => {
   });
 });
 
-/** Records a quiz made of the given questions with the given answers for the active learner. */
+/** Records a quiz made of the given questions with the given answers for the learner. */
 function takeQuiz(stages: Stage[], index: number, questions: Question[] | null, answers: (q: Question) => number) {
   const state = readJourney();
   const plan = planNextQuiz(stages, index, state.profile!, state.progress);
@@ -226,7 +227,7 @@ function takeQuiz(stages: Stage[], index: number, questions: Question[] | null, 
   return { quiz, grade };
 }
 
-/** Student A: fails stage 1 (cathode + wrong Ohm's law), then passes the retry. Student B: one cathode mistake. */
+/** The learner fails stage 1 (cathode + wrong Ohm's law), then passes the retry. */
 function demoData() {
   startLearningJourney("traffic-light");
   setJourneyLevel("intermediate", 3, allCorrect);
@@ -238,28 +239,25 @@ function demoData() {
   expect(first.grade.passed).toBe(false);
   const retry = takeQuiz(stages, 0, null, (q) => q.correct);
   expect(retry.quiz.plan.kind).toBe("retry");
-  switchLearner("b");
-  startLearningJourney("traffic-light");
-  setJourneyLevel("intermediate", 3, allCorrect);
-  const b = takeQuiz(stages, 0, [ledQ, ...others, ohmQ], (q) => (q === ledQ ? pick(ledQ, "The cathode (shorter leg)") : q.correct));
-  expect(b.grade.passed).toBe(true);
+  expect(retry.grade.passed).toBe(true);
   return { stages, retryFocus: retry.quiz.plan.focusSkills[0]! };
 }
+const learnerData = (): LearnerData[] => [{ learner: LEARNER_ID, state: readJourney() }];
 
 describe("learning insights (local aggregation)", () => {
   it("counts common misconceptions, hardest questions and explanations followed by a pass", () => {
     const { retryFocus } = demoData();
-    // Student B is active, so Student A's data comes back from localStorage through the sanitizer.
-    const data = readLearnerJourneys();
-    expect(data.map((d) => d.learner)).toEqual(["a", "b"]);
+    // Read back from localStorage through the sanitizer, as after a reload.
+    reloadJourney();
+    const data = learnerData();
     const insights = aggregateInsights(data, "en");
-    expect(insights).toMatchObject({ learners: 2, answers: 6 + 5 + 5 + 5, wrongAnswers: 3, attempts: 3 });
-    expect(insights.misconceptions.map((m) => [m.misconception.id, m.count, m.learners])).toEqual([
-      ["led-polarity-reversed", 2, 2],
-      ["ohms-law-units", 1, 1],
+    expect(insights).toMatchObject({ learners: 1, answers: 3 + 5 + 5, wrongAnswers: 2, attempts: 2 });
+    expect(insights.misconceptions.map((m) => [m.misconception.id, m.count])).toEqual([
+      ["led-polarity-reversed", 1],
+      ["ohms-law-units", 1],
     ]);
-    expect(insights.hardestQuestions[0]).toMatchObject({ questionId: ledQ.id, answered: 2, correct: 0, rate: 0 });
-    expect(insights.hardestQuestions[1]).toMatchObject({ questionId: ohmQ.id, answered: 2, correct: 1, rate: 50 });
+    expect(insights.hardestQuestions[0]).toMatchObject({ questionId: ledQ.id, answered: 1, correct: 0, rate: 0 });
+    expect(insights.hardestQuestions[1]).toMatchObject({ questionId: ohmQ.id, answered: 1, correct: 0, rate: 0 });
     expect(insights.explanations).toEqual([
       { stageId: "traffic-leds", stageTitle: "LEDs and resistors", skill: retryFocus, source: "local", shown: 1, passed: 1 },
     ]);
@@ -268,8 +266,8 @@ describe("learning insights (local aggregation)", () => {
     expect(ar.explanations[0]!.stageTitle).toBe("الصمامات والمقاومات");
   });
 
-  it("is empty without saved learners", () => {
-    expect(aggregateInsights(readLearnerJourneys(), "en")).toMatchObject({
+  it("is empty before the level check", () => {
+    expect(aggregateInsights(learnerData(), "en")).toMatchObject({
       learners: 0,
       answers: 0,
       misconceptions: [],
@@ -282,39 +280,33 @@ describe("learning insights (local aggregation)", () => {
 describe("anonymized export", () => {
   it("exports answer records and outcomes without names, descriptions or the API key", () => {
     demoData();
-    switchLearner("a");
-    // Student A's journey becomes an idea journey whose free text holds a name.
-    startIdeaJourney("My name is Sara and I want a plant watering box", [{ key: "arduino_uno", quantity: 1 }]);
-    switchLearner("b");
-    const data = readLearnerJourneys();
-    const exported = anonymizedExport(data, new Date("2026-11-26T10:00:00Z"));
+    // A free-text description that holds a name must not be exported.
+    const state = readJourney();
+    saveJourney({ ...state, project: { ...state.project!, description: "My name is Sara and I want a traffic light" } });
+    const exported = anonymizedExport(learnerData(), new Date("2026-11-26T10:00:00Z"));
     const json = JSON.stringify(exported);
     expect(exported).toMatchObject({ format: "aipm.learning-records", version: 1, exportedAt: "2026-11-26T10:00:00.000Z", passMark: 80 });
-    // Student A has no level or profile any more, so only Student B is exported, as learner-1.
     expect(exported.learners.map((l) => l.learner)).toEqual(["learner-1"]);
     const learner = exported.learners[0]!;
     expect(learner).toMatchObject({ level: "intermediate", project: "traffic-light" });
-    expect(learner.answers).toHaveLength(8);
+    expect(learner.answers).toHaveLength(13);
     expect(learner.answers.find((a) => a.questionId === ledQ.id)).toMatchObject({
       chosen: "The cathode (shorter leg)",
       isCorrect: false,
       misconceptionId: "led-polarity-reversed",
       correctIndex: ledQ.correct,
     });
-    expect(learner.attempts[0]).toMatchObject({ stageId: "traffic-leds", attempt: 1, score: 80, passed: true, quizSource: "local", planKind: "first" });
-    for (const secret of ["Sara", "Student", "الطالب", "Traffic light", "إشارة المرور", "test-key", "VITE_GEMINI"]) expect(json).not.toContain(secret);
-    const key = (import.meta.env.VITE_GEMINI_API_KEY ?? "").trim();
-    if (key) expect(json).not.toContain(key);
-  });
-
-  it("labels learners by position only and keeps both when both have data", () => {
-    demoData();
-    const exported = anonymizedExport(readLearnerJourneys());
-    expect(exported.learners.map((l) => l.learner)).toEqual(["learner-1", "learner-2"]);
-    expect(exported.learners[0]!.attempts.map((a) => a.planKind)).toEqual(["first", "retry"]);
-    expect(exported.learners[0]!.answers.filter((a) => a.misconceptionId).map((a) => a.misconceptionId).sort()).toEqual([
+    expect(learner.attempts.map((a) => [a.score, a.passed, a.planKind])).toEqual([
+      [60, false, "first"],
+      [100, true, "retry"],
+    ]);
+    expect(learner.answers.filter((a) => a.misconceptionId).map((a) => a.misconceptionId).sort()).toEqual([
       "led-polarity-reversed",
       "ohms-law-units",
     ]);
+    for (const secret of ["Sara", "Student", "الطالب", "Traffic light", "إشارة المرور", "test-key", "VITE_GEMINI", `"learner":"${LEARNER_ID}"`])
+      expect(json).not.toContain(secret);
+    const key = (import.meta.env.VITE_GEMINI_API_KEY ?? "").trim();
+    if (key) expect(json).not.toContain(key);
   });
 });

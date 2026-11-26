@@ -54,6 +54,7 @@ import {
   type WireFit,
 } from "@/lib/lab/wireCompatibility";
 import { LabWiringAssistant } from "./LabWiringAssistant";
+import { useWiringMentor, WiringMentorButton, WiringMentorNote, WiringMentorSummary } from "./WiringMentor";
 import { validate, type ValidationResult, type Issue } from "@/lib/lab/validate";
 import {
   Dialog,
@@ -443,6 +444,7 @@ export function HardwareLab({
     }
     setDialog(null);
   };
+  const mentor = useWiringMentor(result, active.data);
 
   return (
     <div className="hardware-lab flex h-screen flex-col bg-background text-foreground">
@@ -1083,13 +1085,16 @@ export function HardwareLab({
           </section>
 
           <section className="flex min-h-0 flex-1 flex-col">
-            <div className="flex items-center justify-between p-3 pb-2">
+            <div className="flex flex-wrap items-center justify-between gap-2 p-3 pb-2">
               <h2 className="text-sm font-semibold">Wiring Validation</h2>
-              {result && (
-                <button className="text-[11px] text-primary hover:underline" onClick={runValidate}>
-                  Re-run
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                <WiringMentorButton mentor={mentor} />
+                {result && (
+                  <button className="text-[11px] text-primary hover:underline" onClick={runValidate}>
+                    Re-run
+                  </button>
+                )}
+              </div>
             </div>
             {!result ? (
               <div className="m-3 mt-0 rounded-lg border border-dashed p-5 text-center">
@@ -1110,6 +1115,7 @@ export function HardwareLab({
                     tone="text-warning"
                   />
                 </div>
+                <WiringMentorSummary mentor={mentor} />
                 <div className="mt-3 flex-1 space-y-1.5 overflow-y-auto px-3 pb-3">
                   {!result.issues.length && (
                     <div className="flex items-center gap-2 rounded-md bg-accent p-3 text-sm text-accent-foreground">
@@ -1128,11 +1134,12 @@ export function HardwareLab({
                       ) : (
                         <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />
                       )}
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="text-xs font-semibold">{iss.type}</div>
                         <div className="text-[11px] leading-snug text-muted-foreground">
                           {iss.message}
                         </div>
+                        <WiringMentorNote mentor={mentor} index={i} />
                       </div>
                     </button>
                   ))}

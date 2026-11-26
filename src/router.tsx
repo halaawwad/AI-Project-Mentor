@@ -19,6 +19,7 @@ import { ReadyPage } from "@/routes/journey/ReadyPage";
 import { StagePage } from "@/routes/journey/StagePage";
 import { HomePage } from "@/routes/HomePage";
 import { InsightsPage } from "@/routes/InsightsPage";
+import { DemoReadinessPage } from "@/routes/DemoReadinessPage";
 import { LabPage } from "@/routes/LabPage";
 
 // Code-based routes: the LabAssist student app used TanStack Start file routes with SSR;
@@ -145,12 +146,14 @@ const journeyRoutes = [
 ] as const;
 
 const insightsRoute = createRoute({ getParentRoute: () => rootRoute, path: "/insights", component: InsightsPage });
+const demoReadinessRoute = createRoute({ getParentRoute: () => rootRoute, path: "/demo-readiness", component: DemoReadinessPage });
 
 const routeTree = rootRoute.addChildren([
   homeRoute,
   describeRoute,
   ...journeyRoutes,
   insightsRoute,
+  demoReadinessRoute,
   catalogRoute,
   bomRoute,
   labRoute,

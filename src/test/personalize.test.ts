@@ -21,7 +21,6 @@ import {
   setJourneyLanguage,
   setJourneyLevel,
   startLearningJourney,
-  switchLearner,
 } from "../lib/journey/store";
 import type { LearnerProfile, PersonalizedQuiz, Question, QuizPlan, Stage } from "../lib/journey/types";
 import type { AiClient } from "../lib/suggest/aiEngine";
@@ -190,21 +189,21 @@ describe("adaptive rules", () => {
     }
   });
 
-  it("gives two learners different next quizzes on the same stage", () => {
+  it("gives different next quizzes for different answers on the same stage", () => {
     const { stages } = setup();
     const stage = stages[0]!;
     const first = buildLocalQuiz(stages, 0, planNextQuiz(stages, 0, initialProfile("intermediate", allCorrect), {}), initialProfile("intermediate", allCorrect), "a", "en");
     const skills = [...new Set(first.questions.map((q) => q.skill))];
     expect(skills.length).toBeGreaterThan(1);
-    const nextFor = (learner: string, missed: string) => {
+    const nextFor = (missed: string) => {
       const profile = initialProfile("intermediate", allCorrect);
       const answers = answer(first, (q) => q.skill === missed);
       const updated = updateProfileAfterQuiz(profile, stage.id, first, answers, gradeQuiz(first, answers));
       const plan = planNextQuiz(stages, 0, updated, { [stage.id]: { attempts: 1, passed: false, bestScore: 0, lastScore: 0 } });
-      return buildLocalQuiz(stages, 0, plan, updated, learner, "en");
+      return buildLocalQuiz(stages, 0, plan, updated, "learner", "en");
     };
-    const a = nextFor("a", skills[0]!);
-    const b = nextFor("b", skills[1]!);
+    const a = nextFor(skills[0]!);
+    const b = nextFor(skills[1]!);
     expect(a.plan.focusSkills[0]).toBe(skills[0]);
     expect(b.plan.focusSkills[0]).toBe(skills[1]);
     expect(a.questions.map((q) => q.id)).not.toEqual(b.questions.map((q) => q.id));
@@ -361,18 +360,11 @@ describe("fallback paths", () => {
   });
 });
 
-describe("demo learners and storage", () => {
-  it("keeps separate journeys per learner, and Reset demo clears both", () => {
+describe("storage", () => {
+  it("keeps one journey, and Reset demo clears it", () => {
     setup("traffic-light");
-    switchLearner("b");
-    expect(readJourney().project).toBeNull();
-    setup("parking-sensor");
-    expect(readJourney().project!.id).toBe("parking-sensor");
-    switchLearner("a");
     expect(readJourney().project!.id).toBe("traffic-light");
     resetDemo();
-    expect(readJourney().project).toBeNull();
-    switchLearner("b");
     expect(readJourney().project).toBeNull();
   });
 

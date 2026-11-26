@@ -183,8 +183,10 @@ describe("AI suggestions (Gemini)", () => {
     const cases: [ApiError, string][] = [
       [apiError(400, '{"error":{"message":"API key not valid. Please pass a valid API key.","status":"INVALID_ARGUMENT","details":[{"reason":"API_KEY_INVALID"}]}}'), "invalid-key"],
       [apiError(403, '{"error":{"status":"PERMISSION_DENIED"}}'), "permission"],
-      [apiError(404, '{"error":{"message":"models/x is not found","status":"NOT_FOUND"}}'), "bad-request"],
+      [apiError(404, '{"error":{"message":"models/x is not found","status":"NOT_FOUND"}}'), "model-not-found"],
+      [apiError(400, '{"error":{"message":"Invalid JSON payload","status":"INVALID_ARGUMENT"}}'), "bad-request"],
       [apiError(503, '{"error":{"status":"UNAVAILABLE"}}'), "unavailable"],
+      [apiError(500, '{"error":{"status":"INTERNAL"}}'), "server-error"],
     ];
     for (const [error, reason] of cases) {
       const { client } = fakeClient(async () => {

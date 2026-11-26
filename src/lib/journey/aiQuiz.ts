@@ -1,5 +1,5 @@
 import { catalogByKey, componentCatalog } from "@/lib/componentCatalog";
-import { AiSuggestionError, classifyError, responseText, type AiClient } from "@/lib/suggest/aiEngine";
+import { generateStructured, type StructuredCall } from "@/lib/suggest/aiEngine";
 import { shortFunction } from "@/lib/suggest/catalogContext";
 import { masteryOf, promptKey, QUIZ_LENGTH, stageSkills } from "./adaptive";
 import { exampleQuestions, formatExampleQuestions, formatMisconceptions, retrieveMisconceptions } from "./misconceptions";
@@ -49,13 +49,19 @@ function allowedPartNames(ctx: AiQuizContext) {
   return keys;
 }
 
-function partData(stage: Stage) {
+/**
+ * Catalog facts for a stage's parts only (never the full catalog): name, key, typical supply,
+ * function and pins. Controller boards have dozens of pins, so they get names only, without
+ * kinds or function lists, which keeps the prompt small.
+ */
+export function partData(stage: Stage) {
   return stage.parts
     .map((key) => catalogByKey.get(key))
     .filter((item) => item !== undefined)
     .map((item) => {
+      const controller = item.def.category === "Microcontrollers";
       const pins = item.def.pins
-        .map((p) => `${p.name} (${p.kind}${p.functions ? `: ${p.functions}` : ""})`)
+        .map((p) => (controller ? p.name : `${p.name} (${p.kind}${p.functions ? `: ${p.functions}` : ""})`))
         .join(", ");
       return `- ${item.name} [${item.key}] · typical supply: ${item.voltage ? `${item.voltage} V` : "circuit-dependent"} · ${shortFunction(item)} · pins: ${pins}`;
     })
@@ -237,40 +243,13 @@ export function validateGeneratedQuiz(raw: unknown, ctx: AiQuizContext): Generat
 /** One Gemini request, no retries. Throws AiSuggestionError with the fallback reason. */
 export async function requestAiQuiz(
   ctx: AiQuizContext,
-  { client, model, timeoutMs }: { client: AiClient; model: string; timeoutMs: number },
+  call: StructuredCall,
 ): Promise<GeneratedQuiz> {
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  let text: string;
-  try {
-    const response = await client.models.generateContent({
-      model,
-      contents: buildQuizPrompt(ctx),
-      config: {
-        systemInstruction: buildQuizSystemPrompt(ctx.language),
-        responseMimeType: "application/json",
-        responseJsonSchema: buildQuizSchema(ctx),
-        maxOutputTokens: 8192,
-        abortSignal: controller.signal,
-      },
-    });
-    text = responseText(response);
-  } catch (error) {
-    throw new AiSuggestionError(classifyError(error, timedOut));
-  } finally {
-    clearTimeout(timer);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new AiSuggestionError("bad-response");
-  }
-  const quiz = validateGeneratedQuiz(parsed, ctx);
-  if (!quiz) throw new AiSuggestionError("bad-response");
-  return quiz;
+  return generateStructured(call, {
+    feature: "quiz",
+    system: buildQuizSystemPrompt(ctx.language),
+    contents: buildQuizPrompt(ctx),
+    schema: buildQuizSchema(ctx),
+    validate: (raw) => validateGeneratedQuiz(raw, ctx),
+  });
 }

@@ -1,8 +1,12 @@
 /// <reference types="@testing-library/jest-dom/vitest" />
-import { expect } from "vitest";
+import { beforeEach, expect } from "vitest";
 import * as matchers from "@testing-library/jest-dom/matchers";
+import { clearAiCache } from "@/lib/ai/cache";
 
 expect.extend(matchers);
+
+// The AI demo cache survives "Reset demo" by design; tests start from an empty cache.
+beforeEach(() => clearAiCache());
 
 Object.defineProperty(window, "scrollTo", {
   writable: true,

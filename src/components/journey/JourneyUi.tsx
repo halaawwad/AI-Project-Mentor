@@ -1,31 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState, type ReactNode } from "react";
-import { Check, Menu, RotateCcw, UserRound } from "lucide-react";
+import { Check, Menu, RotateCcw } from "lucide-react";
 import { AppSidebar, type AppSection } from "@/components/AppSidebar";
 import { Button } from "@/components/ui/button";
 import { journeySteps, type JourneyStepId } from "@/lib/journey/path";
 import { LanguageToggle } from "@/components/journey/Personalization";
-import { LEARNERS, resetDemo, switchLearner, useActiveLearner, useJourney } from "@/lib/journey/store";
-
-/** Demo control: two learners with separate journeys, to show that quizzes differ per student. */
-export function LearnerSwitch() {
-  const active = useActiveLearner();
-  return (
-    <div role="group" aria-label="Demo learner" className="inline-flex items-center gap-1 rounded-full border border-border bg-card p-0.5">
-      <UserRound size={13} className="ms-2 text-muted-foreground" aria-hidden="true" />
-      {LEARNERS.map((learner) => (
-        <button
-          key={learner.id}
-          aria-pressed={active === learner.id}
-          onClick={() => switchLearner(learner.id)}
-          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${active === learner.id ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"}`}
-        >
-          {learner.en} <span dir="rtl">· {learner.ar}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
+import { resetDemo, useJourney } from "@/lib/journey/store";
 
 /** Idea → Parts → Level → Learning path → Quizzes → Ready, with the current step highlighted. */
 export function JourneyIndicator({ current }: { current: JourneyStepId }) {
@@ -80,7 +60,7 @@ export function ResetDemoButton({ className = "" }: { className?: string }) {
       onClick={() => {
         if (
           !window.confirm(
-            "Reset the demo? This clears both learners' journeys, profiles and the BOM. Saved lab circuits are kept.",
+            "Reset the demo? This clears your journey, profile and the BOM. Saved lab circuits and the AI cache are kept (clear the AI cache on the Demo readiness screen).",
           )
         )
           return;
@@ -134,7 +114,6 @@ export function JourneyLayout({
           <div className="flex flex-wrap items-center gap-2">
             <div className="min-w-0 flex-1">{step && <JourneyIndicator current={step} />}</div>
             <LanguageToggle language={journey.language} />
-            <LearnerSwitch />
           </div>
           <header className="glass-panel flex flex-wrap items-center gap-3 rounded-[22px] p-5">
             <Button

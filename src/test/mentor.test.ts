@@ -33,12 +33,12 @@ import {
   setJourneyLanguage,
   setJourneyLevel,
   startLearningJourney,
-  switchLearner,
 } from "../lib/journey/store";
-import type { JourneyState, MentorInsight, PersonalizedQuiz, Question, Stage } from "../lib/journey/types";
+import type { Diagnosis, JourneyState, LearningPlan, MentorInsight, PersonalizedQuiz, Question, Stage } from "../lib/journey/types";
 import type { AiClient } from "../lib/suggest/aiEngine";
 import type { AiConfig } from "../lib/suggest/config";
 import { STORAGE_KEYS } from "../lib/storage";
+import { aiCallLogs, clearAiCallLogs } from "../lib/suggest/diagnostics";
 
 const config: AiConfig = { apiKey: "test-key", model: "gemini-3.5-flash", timeoutMs: 5_000 };
 const noKey: AiConfig = { ...config, apiKey: "" };
@@ -187,62 +187,161 @@ describe("diagnosis validation", () => {
     expect(JSON.stringify(params)).not.toContain("test-key");
   });
 
+  it.each<[string, string, (b: Body) => void, (d: Diagnosis) => void]>([
+    ["a strength without evidence", "no supporting answers", (b) => (b.diagnosis["strengths"] = ["Ohm's law", "Analog input"]), (d) => expect(d.strengths).toEqual(["Analog input"])],
+    ["a skill both strong and weak", "Current limiting", (b) => (b.diagnosis["strengths"] = ["Current limiting"]), (d) => {
+      expect(d.strengths).toEqual([]);
+      expect(d.weakSkills).toEqual(["Current limiting"]);
+    }],
+    ["a misconception without a wrong answer", "no wrong answer", (b) => (b.diagnosis["misconceptions"] = [{ skill: "Analog input", text: "فهم خاطئ" }, { skill: "Current limiting", text: "يظن أن المقاومة ترفع الجهد." }]), (d) => expect(d.misconceptions.map((m) => m.skill)).toEqual(["Current limiting"])],
+    ["a misconception in the wrong language", "wrong language", (b) => (b.diagnosis["misconceptions"] = [{ skill: "Current limiting", text: "Thinks a resistor raises voltage." }]), (d) => expect(d.misconceptions).toEqual([])],
+    ["high confidence on three answers", "confidence: high → low", (b) => (b.diagnosis["confidence"] = "high"), (d) => expect(d.confidence).toBe("low")],
+    ["an unknown confidence", "unknown value", (b) => (b.diagnosis["confidence"] = "certain"), (d) => expect(d.confidence).toBe("low")],
+    ["no summary", "summary: replaced", (b) => (b.diagnosis["summary"] = " "), (d) => expect(d.summary).toBe("تحليل مختصر لإجاباتك حتى الآن.")],
+    ["no confidence note", "confidence note: replaced", (b) => (b.diagnosis["confidenceNote"] = ""), (d) => expect(d.confidenceNote).toContain("3")],
+    ["an overlong summary", "summary: trimmed", (b) => (b.diagnosis["summary"] = "ملخص طويل. ".repeat(100)), (d) => expect(d.summary.length).toBeLessThanOrEqual(600)],
+  ])("repairs a diagnosis with %s and keeps the AI analysis", async (_, note, corrupt, check) => {
+    const { state, stages } = setup();
+    const ctx = ctxOf(state, stages);
+    const body = mentorBody(ctx, corrupt);
+    const result = validateMentorInsight(body, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    check(result.diagnosis);
+    expect(result.repaired.join(" | ")).toContain(note);
+    clearAiCallLogs();
+    const { client } = fakeClient(async () => response(body));
+    const insight = (await prepareMentorInsight({ state, stages, learnerId: "a", config, client }))!;
+    expect(insight.source).toBe("ai");
+    expect(insight.fallbackReason).toBeUndefined();
+    // The repairs are logged for the dev console and the Demo readiness call log.
+    expect(aiCallLogs()[0]).toMatchObject({ feature: "mentor", outcome: "ok" });
+    expect(aiCallLogs()[0]!.detail).toContain(note);
+  });
+
   it.each<[string, string, (b: Body) => void]>([
-    ["an unknown skill", "unknown skill", (b) => (b.diagnosis["weakSkills"] = ["Quantum tunnelling"])],
-    ["a strength without evidence", "no evidence", (b) => (b.diagnosis["strengths"] = ["Ohm's law"])],
-    ["a skill both strong and weak", "both", (b) => (b.diagnosis["strengths"] = ["Current limiting"])],
-    ["a misconception without a wrong answer", "without a wrong answer", (b) => (b.diagnosis["misconceptions"] = [{ skill: "Analog input", text: "x" }])],
-    ["high confidence on three answers", "confidence must be low", (b) => (b.diagnosis["confidence"] = "high")],
-    ["no summary", "summary", (b) => (b.diagnosis["summary"] = " ")],
-    ["no confidence note", "confidence note", (b) => (b.diagnosis["confidenceNote"] = "")],
-    ["a part outside the project", "outside the project", (b) => (b.diagnosis["summary"] = "Try the HC-SR04 Ultrasonic Sensor.")],
-  ])("rejects a diagnosis with %s and uses the local rules", async (_, error, corrupt) => {
+    ["an unknown skill", "unknown skill: Quantum tunnelling", (b) => (b.diagnosis["weakSkills"] = ["Quantum tunnelling"])],
+    ["a summary in the wrong language", "summary is in the wrong language", (b) => (b.diagnosis["summary"] = "You confuse the resistor's role.")],
+    ["a link", "summary contains a link", (b) => (b.diagnosis["summary"] = "اقرأ https://example.com لتفهم المقاومة.")],
+    ["a part outside the project", "outside the project", (b) => (b.diagnosis["summary"] = "جرّب HC-SR04 Ultrasonic Sensor في مشروعك.")],
+    ["nothing usable", "nothing usable", (b) => (b.diagnosis = { summary: "", strengths: [], weakSkills: [], misconceptions: [], confidence: "low", confidenceNote: "" })],
+  ])("still rejects a diagnosis with %s and uses the local rules", async (_, rule, corrupt) => {
     const { state, stages } = setup();
     const ctx = ctxOf(state, stages);
     const body = mentorBody(ctx, corrupt);
     const result = validateMentorInsight(body, ctx);
     expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).toContain(error);
+    expect(!result.ok && result.error).toContain(rule);
+    clearAiCallLogs();
     const { client } = fakeClient(async () => response(body));
     const insight = (await prepareMentorInsight({ state, stages, learnerId: "a", config, client }))!;
     expect(insight).toMatchObject({ source: "local", fallbackReason: "bad-response" });
+    // The exact rule is logged (never the key or the prompt).
+    expect(aiCallLogs()[0]).toMatchObject({ feature: "mentor", outcome: "bad-response" });
+    expect(aiCallLogs()[0]!.detail).toContain(rule);
+    expect(aiCallLogs()[0]!.detail).not.toContain("test-key");
   });
 });
 
 describe("plan validation", () => {
-  it.each<[string, string, (b: Body, ctx: MentorContext) => void, boolean?]>([
-    ["an unknown stage", "unknown stage", (b) => b.plan.items.push({ kind: "stage", target: "traffic-flying", action: "keep", reason: "x", explanation: "" })],
-    ["a removed core stage", "removes core stage", (b) => b.plan.items.pop()],
-    ["broken prerequisite order", "broken prerequisite order", (b) => b.plan.items.splice(2, 2, b.plan.items[3]!, b.plan.items[2]!)],
-    ["a missing reason", "missing reason", (b) => (b.plan.items[2]!["reason"] = " ")],
-    ["a duplicate stage", "duplicate stage", (b) => b.plan.items.push({ ...b.plan.items[1]! })],
-    ["a skippable stage that covers a weak skill", "covers a weak skill", (b) => (b.plan.items[1]!["action"] = "skippable")],
-    ["a stage marked add-remedial", "can't be add-remedial", (b) => (b.plan.items[1]!["action"] = "add-remedial")],
-    ["a remedial for an unknown skill", "unknown skill", (b) => (b.plan.items[0]!["target"] = "Quantum tunnelling")],
-    ["a remedial for a skill that isn't weak", "isn't weak", (b) => (b.plan.items[0]!["target"] = "Ohm's law")],
-    ["no change note", "change note", (b) => (b.plan.changeNote = "")],
-    ["a remedial before a completed stage", "before a completed stage", () => {}, true],
-    [
-      "a completed stage that is shortened",
-      "can't be shorten",
-      (b) => {
-        const [remedial, leds] = b.plan.items;
-        b.plan.items.splice(0, 2, { ...leds!, action: "shorten" }, remedial!);
-      },
-      true,
-    ],
-  ])("rejects a plan with %s", async (_, error, corrupt, firstPassed = false) => {
+  const order = (plan: LearningPlan) => plan.items.map((i) => `${i.kind}:${i.target}:${i.action}`);
+
+  it.each<[string, string, (b: Body, ctx: MentorContext) => void, string[], boolean?]>([
+    ["a removed core stage", "missing stage added as keep", (b) => b.plan.items.pop(), ["remedial:Current limiting:add-remedial", "stage:traffic-leds:keep", "stage:traffic-timing:shorten", "stage:traffic-button:keep"]],
+    ["broken prerequisite order", "order fixed", (b) => b.plan.items.splice(2, 2, b.plan.items[3]!, b.plan.items[2]!), ["remedial:Current limiting:add-remedial", "stage:traffic-leds:keep", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"]],
+    ["a duplicate stage", "removed duplicate", (b) => b.plan.items.push({ ...b.plan.items[1]! }), ["remedial:Current limiting:add-remedial", "stage:traffic-leds:keep", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"]],
+    ["a skippable stage that covers a weak skill", "skippable → keep", (b) => (b.plan.items[1]!["action"] = "skippable"), ["remedial:Current limiting:add-remedial", "stage:traffic-leds:keep", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"]],
+    ["a stage marked add-remedial", "invalid action", (b) => (b.plan.items[1]!["action"] = "add-remedial"), ["remedial:Current limiting:add-remedial", "stage:traffic-leds:keep", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"]],
+    ["a remedial for a skill that isn't weak", "not a weak skill", (b) => (b.plan.items[0]!["target"] = "Ohm's law"), ["stage:traffic-leds:keep", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"]],
+    ["a remedial for a skill not taught in the path", "not taught in this path", (b) => (b.plan.items[0]!["target"] = "Analog input"), ["stage:traffic-leds:keep", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"]],
+    ["a remedial before a completed stage", "moved before the first open stage", () => {}, ["stage:traffic-leds:keep", "remedial:Current limiting:add-remedial", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"], true],
+    ["a completed stage that is shortened", "completed stage shorten → keep", (b) => {
+      const [remedial, leds] = b.plan.items;
+      b.plan.items.splice(0, 2, { ...leds!, action: "shorten" }, remedial!);
+    }, ["stage:traffic-leds:keep", "remedial:Current limiting:add-remedial", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"], true],
+    ["a moved completed stage", "order fixed", (b) => {
+      const [remedial, leds, timing, button] = b.plan.items;
+      b.plan.items.splice(0, 4, remedial!, timing!, leds!, button!);
+    }, ["stage:traffic-leds:keep", "remedial:Current limiting:add-remedial", "stage:traffic-timing:shorten", "stage:traffic-button:skippable"], true],
+  ])("repairs a plan with %s", async (_, note, corrupt, expected, firstPassed = false) => {
     const { stages } = setup();
     const base = ctxOf();
     const ctx: MentorContext = firstPassed ? { ...base, progress: { [stages[0]!.id]: passed } } : base;
     const body = mentorBody(ctx, (b) => corrupt(b, ctx));
     const result = validateMentorInsight(body, ctx);
-    expect(result.ok).toBe(false);
-    expect(!result.ok && result.error).toContain(error);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(order(result.plan)).toEqual(expected);
+    expect(result.repaired.join(" | ")).toContain(note);
     const state = { ...readJourney(), progress: ctx.progress };
-    const { client, spy } = fakeClient(async () => response(body));
+    const { client } = fakeClient(async () => response(body));
     const insight = (await prepareMentorInsight({ state, stages, learnerId: "a", config, client }))!;
-    expect(spy).toHaveBeenCalledTimes(1);
+    expect(insight.source).toBe("ai");
+    expect(effectivePlan(stages, insight)).not.toBeNull();
+  });
+
+  it("adds a default reason and change note when they are missing", () => {
+    setup();
+    const ctx = ctxOf();
+    const result = validateMentorInsight(
+      mentorBody(ctx, (b) => {
+        b.plan.items[2]!["reason"] = " ";
+        b.plan.changeNote = "";
+      }),
+      ctx,
+    );
+    expect(result.ok && result.plan.items[2]!.reason).toBe("جزء من مسار مشروعك.");
+    expect(result.ok && result.plan.changeNote).toBe("حُدّثت خطتك بناءً على إجاباتك الأخيرة.");
+  });
+
+  it("fills missing stages in the default order and keeps prerequisites (irrigation, beginner)", () => {
+    startLearningJourney("irrigation");
+    setJourneyLevel("beginner", 1, levelWrong);
+    const state = readJourney();
+    const stages = buildPath(state);
+    const ctx = mentorContext(state, stages, mentorCheckpoint(state, stages)!);
+    const body = mentorBody(ctx, (b) => {
+      // Gemini lists only the final stage, before basics, with a confidence that is too high.
+      b.plan.items = [{ kind: "stage", target: "irrigation-logic", action: "keep", reason: "سبب.", explanation: "" }, { kind: "stage", target: "basics", action: "keep", reason: "سبب.", explanation: "" }];
+      b.diagnosis["confidence"] = "medium";
+    });
+    const result = validateMentorInsight(body, ctx);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.plan.items.map((i) => i.target)).toEqual(["basics", "irrigation-sensor", "irrigation-relay", "irrigation-logic"]);
+    expect(result.diagnosis.confidence).toBe("low");
+  });
+
+  it("keeps at most three remedial items and the order fixed at this checkpoint", () => {
+    setup();
+    const base = ctxOf();
+    const wrongAll = { ...base, profile: { ...base.profile, answers: ["LED polarity", "Ohm's law", "Colour mixing", "Current limiting"].map((skill, i) => ({ ...base.profile.answers[0]!, questionId: `q${i}`, skill, isCorrect: false })) } };
+    const remedial = (skill: string) => ({ kind: "remedial", target: skill, action: "add-remedial", reason: "سبب.", explanation: "" });
+    const body = mentorBody(wrongAll, (b) => {
+      b.diagnosis["weakSkills"] = ["LED polarity", "Ohm's law", "Colour mixing", "Current limiting"];
+      b.diagnosis["misconceptions"] = [];
+      b.plan.items = [remedial("LED polarity"), remedial("Ohm's law"), remedial("Colour mixing"), ...b.plan.items];
+    });
+    const result = validateMentorInsight(body, wrongAll);
+    expect(result.ok && result.plan.items.filter((i) => i.kind === "remedial")).toHaveLength(3);
+    expect(result.ok && result.repaired.join(" ")).toContain("more than 3");
+  });
+
+  it.each<[string, string, (b: Body) => void]>([
+    ["an unknown stage", "unknown stage: traffic-flying", (b) => b.plan.items.push({ kind: "stage", target: "traffic-flying", action: "keep", reason: "سبب.", explanation: "" })],
+    ["a remedial for an unknown skill", "unknown skill: Quantum tunnelling", (b) => (b.plan.items[0]!["target"] = "Quantum tunnelling")],
+    ["a link in a reason", "contains a link", (b) => (b.plan.items[1]!["reason"] = "راجع www.example.com أولاً.")],
+    ["a part outside the project", "outside the project", (b) => (b.plan.items[1]!["reason"] = "أضف HC-SR04 Ultrasonic Sensor.")],
+    ["no usable stage items", "no usable stage items", (b) => (b.plan.items = [{ kind: "teleport", target: "x" }])],
+  ])("still rejects a plan with %s", async (_, rule, corrupt) => {
+    const { stages } = setup();
+    const ctx = ctxOf();
+    const body = mentorBody(ctx, corrupt);
+    const result = validateMentorInsight(body, ctx);
+    expect(result.ok).toBe(false);
+    expect(!result.ok && result.error).toContain(rule);
+    const { client } = fakeClient(async () => response(body));
+    const insight = (await prepareMentorInsight({ state: readJourney(), stages, learnerId: "a", config, client }))!;
     expect(insight).toMatchObject({ source: "local", fallbackReason: "bad-response" });
     expect(effectivePlan(stages, insight)).not.toBeNull();
   });
@@ -302,19 +401,19 @@ function readingMentor() {
     const items: Record<string, unknown>[] = [];
     stageIds.forEach((id) => {
       if (skill && !done.includes(id) && !items.some((i) => i["kind"] === "remedial"))
-        items.push({ kind: "remedial", target: skill, action: "add-remedial", reason: `weak: ${skill}`, explanation: `Personal note on ${skill}.` });
-      items.push({ kind: "stage", target: id, action: done.includes(id) ? "keep" : skill === "LED polarity" && id === "traffic-button" ? "shorten" : "keep", reason: `reason for ${id}`, explanation: "" });
+        items.push({ kind: "remedial", target: skill, action: "add-remedial", reason: `ضعف في ${skill}`, explanation: `شرح شخصي عن ${skill}.` });
+      items.push({ kind: "stage", target: id, action: done.includes(id) ? "keep" : skill === "LED polarity" && id === "traffic-button" ? "shorten" : "keep", reason: `سبب للمرحلة ${id}`, explanation: "" });
     });
     return response({
       diagnosis: {
-        summary: `Weak in ${weak.join(", ") || "nothing yet"}.`,
+        summary: `ضعف في ${weak.join("، ") || "لا شيء بعد"}.`,
         strengths: [],
         weakSkills: weak,
-        misconceptions: weak.map((s) => ({ skill: s, text: `misreads ${s}` })),
+        misconceptions: weak.map((s) => ({ skill: s, text: `فهم خاطئ لـ${s}` })),
         confidence: Number(/<answer_records count="(\d+)">/.exec(contents)?.[1]) < 6 ? "low" : "medium",
         confidenceNote: "Based on the answers so far.",
       },
-      plan: { items, changeNote: `Plan updated around ${skill ?? "your answers"}.` },
+      plan: { items, changeNote: `حُدّثت الخطة حول ${skill ?? "إجاباتك"}.` },
     });
   });
 }
@@ -366,20 +465,21 @@ describe("plan updates after a stage", () => {
   });
 });
 
-describe("two learners on the same project", () => {
-  const runLearner = async (learner: "a" | "b", missed: string, settings: AiConfig, client?: AiClient) => {
-    switchLearner(learner);
+describe("different answers on the same project (one learner)", () => {
+  /** A fresh run after Reset demo (which keeps the AI cache), missing one skill in stage 1. */
+  const runWith = async (missed: string, settings: AiConfig, client?: AiClient) => {
+    resetDemo();
     const { stages } = setup(allCorrect);
-    passFirstStageMissing(stages, missed, learner);
-    const insight = (await prepareMentorInsight({ state: readJourney(), stages, learnerId: learner, config: settings, ...(client ? { client } : {}) }))!;
+    passFirstStageMissing(stages, missed, "learner");
+    const insight = (await prepareMentorInsight({ state: readJourney(), stages, learnerId: "learner", config: settings, ...(client ? { client } : {}) }))!;
     saveMentorInsight(insight);
     return insight;
   };
 
-  it("gives Student A (weak in LED polarity) and Student B (weak in Ohm's law) different AI analyses and plans", async () => {
-    const { client } = readingMentor();
-    const a = await runLearner("a", "LED polarity", config, client);
-    const b = await runLearner("b", "Ohm's law", config, client);
+  it("gives a different AI analysis and plan when the learner answers differently, not the cached one", async () => {
+    const { client, spy } = readingMentor();
+    const a = await runWith("LED polarity", config, client);
+    const b = await runWith("Ohm's law", config, client);
     expect(a.source).toBe("ai");
     expect(b.source).toBe("ai");
     expect(a.diagnosis.weakSkills).toEqual(["LED polarity"]);
@@ -387,16 +487,17 @@ describe("two learners on the same project", () => {
     expect(a.plan.items).not.toEqual(b.plan.items);
     expect(a.plan.items.find((i) => i.kind === "remedial")!.target).toBe("LED polarity");
     expect(b.plan.items.find((i) => i.kind === "remedial")!.target).toBe("Ohm's law");
-    // Each learner keeps their own plan.
-    switchLearner("a");
-    expect(readJourney().mentor!.insights[0]!.id).toBe(a.id);
-    switchLearner("b");
-    expect(readJourney().mentor!.insights[0]!.id).toBe(b.id);
+    // The cached analysis for "stage:traffic-leds" didn't match the new answers, so it wasn't reused.
+    expect(spy).toHaveBeenCalledTimes(2);
+    // The same answers again reuse the cache: no further request.
+    const c = await runWith("Ohm's law", config, client);
+    expect(c.diagnosis).toEqual(b.diagnosis);
+    expect(spy).toHaveBeenCalledTimes(2);
   });
 
-  it("also gives them different plans with the local rules", async () => {
-    const a = await runLearner("a", "LED polarity", noKey);
-    const b = await runLearner("b", "Ohm's law", noKey);
+  it("also gives different plans with the local rules", async () => {
+    const a = await runWith("LED polarity", noKey);
+    const b = await runWith("Ohm's law", noKey);
     expect(a.source).toBe("local");
     expect(a.diagnosis.weakSkills).toContain("LED polarity");
     expect(b.diagnosis.weakSkills).toContain("Ohm's law");

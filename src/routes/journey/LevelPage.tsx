@@ -1,12 +1,16 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowRight, Gauge } from "lucide-react";
+import { ArrowRight, Gauge, Loader2 } from "lucide-react";
+import { AiSourceLabel, FallbackReasonNote, StillWorking } from "@/components/AiLabel";
 import { DemoBadge, JourneyLayout } from "@/components/journey/JourneyUi";
 import { Button } from "@/components/ui/button";
+import { runAiOnce } from "@/lib/ai/useAi";
+import { difficultyLabel } from "@/lib/journey/adaptive";
 import { questionDir, questionText } from "@/lib/journey/i18n";
-import { levelInfo, levelQuestions, scoreLevel, selfRatings } from "@/lib/journey/level";
+import { levelInfo, levelQuestions, selfRatings } from "@/lib/journey/level";
+import { assessLevel, levelCheckpoint, type LevelAssessment } from "@/lib/journey/levelAi";
 import { setJourneyLevel, useJourney } from "@/lib/journey/store";
-import type { Level } from "@/lib/journey/types";
+import { LEARNER_ID } from "@/lib/learner";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 /** Self-rating plus three quick questions → beginner / intermediate / advanced. */
@@ -15,9 +19,22 @@ export function LevelPage() {
   const navigate = useNavigate();
   const journey = useJourney();
   const lang = journey.language;
+  const learnerId = LEARNER_ID;
   const [rating, setRating] = useState<number | null>(null),
     [answers, setAnswers] = useState<(number | null)[]>(levelQuestions.map(() => null)),
-    [result, setResult] = useState<{ level: Level; score: number; correct: number } | null>(null);
+    [result, setResult] = useState<LevelAssessment | null>(null),
+    [assessing, setAssessing] = useState(false);
+  // One Gemini request per "See my level" (cached per answers); the score thresholds are the fallback.
+  const assess = async (force = false) => {
+    if (rating === null || assessing) return;
+    setAssessing(true);
+    try {
+      const run = () => assessLevel({ learnerId, rating, answers, language: lang });
+      setResult(await runAiOnce(`level|${learnerId}|${levelCheckpoint(rating, answers)}|${lang}`, run, force));
+    } finally {
+      setAssessing(false);
+    }
+  };
 
   if (!journey.project || !journey.parts.length)
     return (
@@ -103,29 +120,43 @@ export function LevelPage() {
             </div>
           </fieldset>
         ))}
-        <Button disabled={!complete} onClick={() => rating !== null && setResult(scoreLevel(rating, answers))}>
-          <Gauge size={15} /> See my level
-        </Button>
+        <Button disabled={!complete || assessing} onClick={() => void assess()}>
+          {assessing ? <Loader2 size={15} className="animate-spin" /> : <Gauge size={15} />}{" "}
+          {assessing ? "Assessing your level… · جارٍ تحديد مستواك…" : "See my level"}
+        </Button>{" "}
+        <StillWorking active={assessing} />
       </section>
 
       {result && (
         <section role="status" className="glass-panel rounded-[22px] p-5">
-          <p className="text-xs text-muted-foreground">
-            {result.correct} of {levelQuestions.length} answers correct · level score {result.score} / 5
-          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-xs text-muted-foreground">
+              {result.correct} of {levelQuestions.length} answers correct · level score {result.score} / 5
+            </p>
+            <AiSourceLabel source={result.source} local="rules" />
+          </div>
           <h2 className="mt-1 text-xl font-bold">
             Your level: {levelInfo[result.level].title.en}{" "}
             <span dir="rtl" className="font-normal">
               · {levelInfo[result.level].title.ar}
             </span>
           </h2>
-          <p dir={lang === "ar" ? "rtl" : "ltr"} className="mt-2 text-sm">
-            {levelInfo[result.level].path[lang]}
+          <p className="text-xs text-muted-foreground">
+            Starting difficulty: {difficultyLabel(result.difficulty).en} · {difficultyLabel(result.difficulty).ar}
           </p>
+          <p dir={lang === "ar" ? "rtl" : "ltr"} className="mt-2 text-sm">
+            {result.reason}
+          </p>
+          {result.source === "ai" && (
+            <p dir={lang === "ar" ? "rtl" : "ltr"} className="mt-1 text-xs text-muted-foreground">
+              {levelInfo[result.level].path[lang]}
+            </p>
+          )}
+          <FallbackReasonNote reason={result.fallbackReason} onRetry={() => assess(true)} />
           <Button
             className="mt-4"
             onClick={() => {
-              setJourneyLevel(result.level, result.score, answers);
+              setJourneyLevel(result.level, result.score, answers, result.difficulty);
               void navigate({ to: "/journey" });
             }}
           >

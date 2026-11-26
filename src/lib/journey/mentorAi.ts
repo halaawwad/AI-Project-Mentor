@@ -1,5 +1,5 @@
 import { catalogByKey, componentCatalog } from "@/lib/componentCatalog";
-import { AiSuggestionError, classifyError, responseText, type AiClient } from "@/lib/suggest/aiEngine";
+import { checked, generateStructured, type Checked, type StructuredCall } from "@/lib/suggest/aiEngine";
 import { masteryOf, stageSkills } from "./adaptive";
 import {
   diagnosisSkills,
@@ -22,7 +22,7 @@ import { stagePrerequisites } from "./path";
 import type { Confidence, Diagnosis, Language, LearningPlan, Misconception, PlanAction, PlanItem } from "./types";
 
 /** Answer records sent per request (newest first). */
-export const PROMPT_RECORDS = 20;
+export const PROMPT_RECORDS = 12;
 const CONFIDENCE: Confidence[] = ["low", "medium", "high"];
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -41,7 +41,7 @@ Return:
 - diagnosis.misconceptions: up to ${MAX_MISCONCEPTIONS} likely misunderstandings in plain language, inferred from the wrong option the learner chose compared with the correct one (for example "confuses the LED's long and short leg"). Each names its skill and must come from a wrong answer.
 - Known misconceptions were matched locally to this learner's wrong answers. When one fits, base the misconception on it and reword it for this learner. Don't report a known misconception that no wrong answer supports. The examples show format and accuracy only.
 - diagnosis.confidence (low, medium or high) and confidenceNote. With fewer than ${MIN_CONFIDENT_RECORDS} answers, confidence is low and the note says there is too little data.
-- plan.items: the ordered plan. Include every stage exactly once, after its prerequisites.
+- plan.items: the ordered plan. Include every stage exactly once, after all of its prerequisites. You may reorder open, unattempted stages that don't depend on each other when it helps this learner (for example a stage on a strong skill first); say why in its reason. Completed and attempted stages stay first, in the order given.
   - kind "stage" (target = a stage id) with action keep, shorten or skippable. Completed stages are always keep.
   - shorten: the learner already shows mastery of most of the stage's skills, so the lesson is shown in short form.
   - skippable: strong evidence on all of the stage's skills. The learner may go straight to the quiz and must still pass it with 80%. Never mark a stage skippable if it covers a weak skill.
@@ -85,7 +85,7 @@ export function buildMentorPrompt(ctx: MentorContext) {
   const previous = ctx.previous?.items.map((i) => `- ${i.kind} ${i.target}: ${i.action}`).join("\n");
   const known = formatMisconceptions(retrieveMisconceptions(profile.answers, { skills: diagnosisSkills(stages) }));
   const examples = formatExampleQuestions(
-    exampleQuestions(stages, exampleSkills(ctx), new Set(profile.answers.map((r) => r.questionId))),
+    exampleQuestions(stages, exampleSkills(ctx), new Set(profile.answers.map((r) => r.questionId)), 2),
   );
   return `<project>
 Title: ${ctx.projectTitle}
@@ -105,7 +105,7 @@ ${records || "- none yet"}
 </answer_records>
 <previous_plan>
 ${previous || "- none (this is the first plan)"}
-</previous_plan>
+</previous_plan>${ctx.lockedOrder ? `\n<required_stage_order>${ctx.lockedOrder.join(", ")}</required_stage_order>` : ""}
 <known_misconceptions>
 ${known || "- none matched to recent wrong answers"}
 </known_misconceptions>
@@ -183,103 +183,244 @@ export function buildMentorSchema(ctx: Pick<MentorContext, "stages">) {
   };
 }
 
-const stringList = (value: unknown) =>
-  Array.isArray(value) && value.every((v) => typeof v === "string") ? (value as string[]) : null;
+const t = (language: Language, en: string, ar: string) => (language === "ar" ? ar : en);
+const ARABIC = /[؀-ۿ]/;
+/** Arabic output must contain Arabic letters; English output must not. */
+const inLanguage = (text: string, language: Language) => (language === "ar" ? ARABIC.test(text) : !ARABIC.test(text));
+const hasLink = (text: string) => /https?:\/\/|www\./i.test(text);
+const MAX_SUMMARY = 600;
+const MAX_TEXT = 300;
 
 /**
- * Strict diagnosis check. Returns the cleaned diagnosis, or the reason it was rejected: unknown
- * skills, skills without evidence, a skill both strong and weak, misconceptions without a wrong
- * answer, missing text, or high confidence on too little data.
+ * Diagnosis check that repairs what is safe to repair and rejects only safety problems.
+ * Repairs: skills and misconceptions without supporting answers (or in the wrong language) are
+ * dropped, duplicates removed, a skill in both lists kept only as weak, confidence forced to
+ * "low" below 6 answers, a missing note or summary given a default, long text trimmed.
+ * Rejects: unknown skill tags, links, a summary in the wrong language, or nothing usable.
  */
-export function validateDiagnosis(raw: unknown, ctx: MentorContext): Diagnosis | string {
-  if (!isRecord(raw)) return "diagnosis is missing";
+export function validateDiagnosis(raw: unknown, ctx: MentorContext): Checked<Diagnosis> {
+  const rejected: string[] = [];
+  const repaired: string[] = [];
+  if (!isRecord(raw)) return checked<Diagnosis>(null, ["diagnosis is missing"]);
+  const lang = ctx.language;
   const allowed = new Set(diagnosisSkills(ctx.stages));
-  const { assessed, wrong } = evidence(ctx.profile);
-  const summary = clean(raw["summary"], 600);
-  if (!summary) return "diagnosis summary is missing";
-  const strengths = stringList(raw["strengths"]);
-  const weakSkills = stringList(raw["weakSkills"]);
-  if (!strengths || !weakSkills) return "strengths or weak skills are not lists";
-  for (const skill of [...strengths, ...weakSkills]) {
-    if (!allowed.has(skill)) return `unknown skill: ${skill}`;
-    if (!assessed.has(skill)) return `no evidence for skill: ${skill}`;
+  const { wrong, supportsWeak, supportsStrength } = evidence(ctx.profile);
+  const skillList = (field: "strengths" | "weakSkills", label: string) => {
+    const supported = field === "weakSkills" ? supportsWeak : supportsStrength;
+    const value = raw[field];
+    if (!Array.isArray(value)) {
+      repaired.push(`${label}: not a list, treated as empty`);
+      return [];
+    }
+    const kept: string[] = [];
+    for (const skill of value) {
+      if (typeof skill !== "string") repaired.push(`${label}: dropped a non-text entry`);
+      else if (!allowed.has(skill)) rejected.push(`unknown skill: ${skill}`);
+      else if (!supported(skill)) repaired.push(`${label}: dropped ${skill} (no supporting answers)`);
+      else if (kept.includes(skill)) repaired.push(`${label}: removed duplicate ${skill}`);
+      else kept.push(skill);
+    }
+    return kept;
+  };
+  const weakSkills = skillList("weakSkills", "weak skills");
+  let strengths = skillList("strengths", "strengths");
+  const both = strengths.filter((s) => weakSkills.includes(s));
+  if (both.length) {
+    strengths = strengths.filter((s) => !both.includes(s));
+    repaired.push(`strengths: removed ${both.join(", ")} (also listed as weak)`);
   }
-  if (new Set(strengths).size !== strengths.length || new Set(weakSkills).size !== weakSkills.length)
-    return "duplicate skill";
-  if (strengths.some((s) => weakSkills.includes(s))) return "a skill is both a strength and a weak skill";
-  const list = raw["misconceptions"];
-  if (!Array.isArray(list) || list.length > MAX_MISCONCEPTIONS) return "misconceptions are not a short list";
   const misconceptions: Misconception[] = [];
+  const list = Array.isArray(raw["misconceptions"]) ? raw["misconceptions"] : [];
+  if (!Array.isArray(raw["misconceptions"])) repaired.push("misconceptions: not a list, treated as empty");
   for (const entry of list) {
-    if (!isRecord(entry) || typeof entry["skill"] !== "string") return "malformed misconception";
-    const text = clean(entry["text"]);
-    if (!allowed.has(entry["skill"])) return `unknown skill: ${entry["skill"]}`;
-    if (!text) return "misconception text is missing";
-    if (!wrong.has(entry["skill"])) return `misconception without a wrong answer: ${entry["skill"]}`;
-    misconceptions.push({ skill: entry["skill"], text });
+    if (!isRecord(entry) || typeof entry["skill"] !== "string") {
+      repaired.push("misconceptions: dropped a malformed entry");
+      continue;
+    }
+    const skill = entry["skill"];
+    const text = clean(entry["text"], MAX_TEXT);
+    if (!allowed.has(skill)) rejected.push(`unknown skill: ${skill}`);
+    else if (!text) repaired.push(`misconceptions: dropped an empty one on ${skill}`);
+    else if (hasLink(text)) rejected.push("misconception contains a link");
+    else if (!wrong.has(skill)) repaired.push(`misconceptions: dropped ${skill} (no wrong answer)`);
+    else if (!inLanguage(text, lang)) repaired.push(`misconceptions: dropped ${skill} (wrong language)`);
+    else if (misconceptions.length >= MAX_MISCONCEPTIONS) repaired.push(`misconceptions: kept the first ${MAX_MISCONCEPTIONS}`);
+    else misconceptions.push({ skill, text });
   }
-  const confidence = raw["confidence"] as Confidence;
-  const confidenceNote = clean(raw["confidenceNote"]);
-  if (!CONFIDENCE.includes(confidence)) return "unknown confidence";
-  if (!confidenceNote) return "confidence note is missing";
-  if (ctx.profile.answers.length < MIN_CONFIDENT_RECORDS && confidence !== "low")
-    return "confidence must be low with this little data";
-  return { summary, strengths, weakSkills, misconceptions, confidence, confidenceNote };
+  const n = ctx.profile.answers.length;
+  let confidence = raw["confidence"] as Confidence;
+  if (!CONFIDENCE.includes(confidence)) {
+    confidence = "low";
+    repaired.push("confidence: unknown value, set to low");
+  }
+  if (n < MIN_CONFIDENT_RECORDS && confidence !== "low") {
+    repaired.push(`confidence: ${confidence} → low (only ${n} answers)`);
+    confidence = "low";
+  }
+  let confidenceNote = clean(raw["confidenceNote"], MAX_TEXT);
+  if (hasLink(confidenceNote)) rejected.push("confidence note contains a link");
+  if (!confidenceNote || !inLanguage(confidenceNote, lang)) {
+    confidenceNote = t(lang, `Based on ${n} answers so far.`, `مبني على ${n} إجابات حتى الآن.`);
+    repaired.push("confidence note: replaced with a default");
+  }
+  let summary = clean(raw["summary"], MAX_SUMMARY);
+  if (typeof raw["summary"] === "string" && raw["summary"].trim().length > MAX_SUMMARY) repaired.push("summary: trimmed");
+  if (hasLink(summary)) rejected.push("summary contains a link");
+  if (summary && !inLanguage(summary, lang)) rejected.push("summary is in the wrong language");
+  if (!summary) {
+    if (!strengths.length && !weakSkills.length && !misconceptions.length) rejected.push("nothing usable in the diagnosis");
+    summary = t(lang, "A short analysis of your answers so far.", "تحليل مختصر لإجاباتك حتى الآن.");
+    repaired.push("summary: replaced with a default");
+  }
+  if (rejected.length) return checked<Diagnosis>(null, rejected, repaired);
+  return checked({ summary, strengths, weakSkills, misconceptions, confidence, confidenceNote }, [], repaired);
 }
 
 /**
- * Strict plan check (deterministic). Rejects unknown stages or skills, missing reasons, duplicate
- * items, a plan that leaves out a stage, broken prerequisite order, changed completed stages,
- * a skippable stage that covers a weak skill, remedial items for skills that aren't weak, remedial
- * items before completed stages, and more than three remedial items.
+ * Orders the stages: completed or attempted stages first (in the current order), or exactly the
+ * order already fixed at this checkpoint; then the preferred order, taking at each step the first
+ * stage whose prerequisites are already placed. Stages missing from `preferred` come last in the
+ * default order, unless another stage needs them earlier.
  */
-export function validatePlan(raw: unknown, ctx: MentorContext, diagnosis: Diagnosis): LearningPlan | string {
-  if (!isRecord(raw) || !Array.isArray(raw["items"])) return "plan items are missing";
-  const list: unknown[] = raw["items"];
-  const stageIds = ctx.stages.map((s) => s.id);
-  const listed = new Set(list.filter(isRecord).filter((e) => e["kind"] === "stage").map((e) => e["target"]));
-  const missing = stageIds.filter((id) => !listed.has(id));
-  if (missing.length) return `removes core stage: ${missing.join(", ")}`;
-  const skills = new Set(pathSkills(ctx.stages));
+function safeOrder(ctx: MentorContext, preferred: string[]) {
+  const ids = ctx.stages.map((s) => s.id);
+  if (ctx.lockedOrder && ctx.lockedOrder.length === ids.length && ids.every((id) => ctx.lockedOrder!.includes(id)))
+    return [...ctx.lockedOrder];
   const prerequisites = stagePrerequisites(ctx.stages);
-  const passed = stageIds.filter((id) => ctx.progress[id]?.passed);
+  const fixed = ctx.stages.filter((s) => ctx.progress[s.id]).map((s) => s.id);
+  const rest = [...preferred.filter((id) => !fixed.includes(id)), ...ids.filter((id) => !preferred.includes(id) && !fixed.includes(id))];
+  const order = [...fixed];
+  while (rest.length) {
+    const next = rest.findIndex((id) => prerequisites[id]!.every((p) => order.includes(p)));
+    order.push(...rest.splice(next >= 0 ? next : 0, 1));
+  }
+  return order;
+}
+
+/**
+ * Plan check that repairs what is safe to repair. Repairs: malformed, duplicate or misplaced items,
+ * missing stages (added as "keep"), an order that breaks prerequisites or moves completed or
+ * attempted stages, completed stages or invalid actions set to "keep", "skippable" on a stage with
+ * a weak skill set to "keep", remedials that aren't for weak skills (or are past the limit) dropped,
+ * missing reasons and notes given defaults. Rejects: unknown stages or skill tags, links, or no
+ * usable stage items.
+ */
+export function validatePlan(raw: unknown, ctx: MentorContext, diagnosis: Diagnosis): Checked<LearningPlan> {
+  const rejected: string[] = [];
+  const repaired: string[] = [];
+  if (!isRecord(raw) || !Array.isArray(raw["items"])) return checked<LearningPlan>(null, ["plan items are missing"]);
+  const lang = ctx.language;
+  const defaultReason = t(lang, "Part of your project path.", "جزء من مسار مشروعك.");
+  const taught = new Set(pathSkills(ctx.stages));
+  const known = new Set(diagnosisSkills(ctx.stages));
+  const passed = new Set(ctx.stages.filter((s) => ctx.progress[s.id]?.passed).map((s) => s.id));
   const weak = new Set([...diagnosis.weakSkills, ...diagnosis.misconceptions.map((m) => m.skill)]);
-  const seenStages = new Set<string>();
-  const seenSkills = new Set<string>();
-  const items: PlanItem[] = [];
-  for (const entry of list) {
-    if (!isRecord(entry) || typeof entry["target"] !== "string") return "malformed plan item";
-    const target = entry["target"];
-    const action = entry["action"] as PlanAction;
+  const reasonOf = (entry: Record<string, unknown>, target: string) => {
     const reason = clean(entry["reason"]);
-    if (!PLAN_ACTIONS.includes(action)) return `unknown action for ${target}`;
-    if (!reason) return `missing reason for ${target}`;
+    if (hasLink(reason)) rejected.push(`reason for ${target} contains a link`);
+    if (reason && inLanguage(reason, lang)) return reason;
+    repaired.push(`${target}: ${reason ? "reason in the wrong language" : "missing reason"}, default used`);
+    return defaultReason;
+  };
+  const stageItems = new Map<string, PlanItem>();
+  const preferred: string[] = [];
+  /** Remedials with the stage they were placed before (null = at the end). */
+  const remedials: { item: PlanItem; before: string | null }[] = [];
+  const pending: PlanItem[] = [];
+  for (const entry of raw["items"] as unknown[]) {
+    if (!isRecord(entry) || typeof entry["target"] !== "string") {
+      repaired.push("dropped a malformed item");
+      continue;
+    }
+    const target = entry["target"];
     if (entry["kind"] === "stage") {
       const stage = ctx.stages.find((s) => s.id === target);
-      if (!stage) return `unknown stage: ${target}`;
-      if (seenStages.has(target)) return `duplicate stage: ${target}`;
-      if (action === "add-remedial") return `stage ${target} can't be add-remedial`;
-      const before = prerequisites[target]!.filter((p) => !seenStages.has(p));
-      if (before.length) return `broken prerequisite order: ${target} before ${before.join(", ")}`;
-      if (passed.includes(target) && action !== "keep") return `completed stage ${target} can't be ${action}`;
-      if (action === "skippable" && stageSkills(stage).some((s) => weak.has(s)))
-        return `skippable stage ${target} covers a weak skill`;
-      seenStages.add(target);
-      items.push({ kind: "stage", target, action, reason, explanation: "" });
+      if (!stage) {
+        rejected.push(`unknown stage: ${target}`);
+        continue;
+      }
+      if (stageItems.has(target)) {
+        repaired.push(`${target}: removed duplicate`);
+        continue;
+      }
+      let action = entry["action"] as PlanAction;
+      if (!PLAN_ACTIONS.includes(action) || action === "add-remedial") {
+        repaired.push(`${target}: invalid action ${String(action)} → keep`);
+        action = "keep";
+      }
+      if (passed.has(target) && action !== "keep") {
+        repaired.push(`${target}: completed stage ${action} → keep`);
+        action = "keep";
+      }
+      if (action === "skippable" && stageSkills(stage).some((s) => weak.has(s))) {
+        repaired.push(`${target}: skippable → keep (covers a weak skill)`);
+        action = "keep";
+      }
+      stageItems.set(target, { kind: "stage", target, action, reason: reasonOf(entry, target), explanation: "" });
+      preferred.push(target);
+      for (const item of pending.splice(0)) remedials.push({ item, before: target });
     } else if (entry["kind"] === "remedial") {
-      if (!skills.has(target)) return `unknown skill: ${target}`;
-      if (action !== "add-remedial") return `remedial ${target} must be add-remedial`;
-      if (seenSkills.has(target)) return `duplicate remedial: ${target}`;
-      if (!weak.has(target)) return `remedial for a skill that isn't weak: ${target}`;
-      if (passed.some((id) => !seenStages.has(id))) return `remedial ${target} before a completed stage`;
-      seenSkills.add(target);
-      items.push({ kind: "remedial", target, action, reason, explanation: clean(entry["explanation"], 800) });
-    } else return "unknown plan item kind";
+      if (!known.has(target) && !taught.has(target)) {
+        rejected.push(`unknown skill: ${target}`);
+        continue;
+      }
+      if (!taught.has(target)) repaired.push(`remedial ${target}: dropped (not taught in this path)`);
+      else if (!weak.has(target)) repaired.push(`remedial ${target}: dropped (not a weak skill)`);
+      else if ([...pending, ...remedials.map((r) => r.item)].some((i) => i.target === target)) repaired.push(`remedial ${target}: removed duplicate`);
+      else {
+        if (entry["action"] !== "add-remedial") repaired.push(`remedial ${target}: action → add-remedial`);
+        let explanation = clean(entry["explanation"], 800);
+        if (hasLink(explanation)) rejected.push(`remedial ${target} contains a link`);
+        if (explanation && !inLanguage(explanation, lang)) {
+          explanation = "";
+          repaired.push(`remedial ${target}: explanation in the wrong language dropped`);
+        }
+        pending.push({ kind: "remedial", target, action: "add-remedial", reason: reasonOf(entry, target), explanation });
+      }
+    } else repaired.push(`dropped an item of unknown kind on ${target}`);
   }
-  if (seenSkills.size > MAX_REMEDIALS) return "too many remedial items";
-  const changeNote = clean(raw["changeNote"]);
-  if (!changeNote) return "change note is missing";
-  return { items, changeNote };
+  for (const item of pending) remedials.push({ item, before: null });
+  if (!stageItems.size) rejected.push("no usable stage items");
+  if (rejected.length) return checked<LearningPlan>(null, rejected, repaired);
+
+  for (const stage of ctx.stages)
+    if (!stageItems.has(stage.id)) {
+      stageItems.set(stage.id, { kind: "stage", target: stage.id, action: "keep", reason: defaultReason, explanation: "" });
+      repaired.push(`${stage.id}: missing stage added as keep`);
+    }
+  const order = safeOrder(ctx, preferred);
+  const given = preferred.join("|");
+  if (order.filter((id) => preferred.includes(id)).join("|") !== given) repaired.push("order fixed to respect prerequisites and completed stages");
+
+  // Remedials go before their stage; one before a completed stage (or at the end) moves to the first open stage.
+  const firstOpen = order.find((id) => !passed.has(id)) ?? null;
+  const before = new Map<string, PlanItem[]>();
+  let count = 0;
+  for (const { item, before: anchor } of remedials) {
+    let at = anchor;
+    if (!at || passed.has(at)) {
+      if (!firstOpen) {
+        repaired.push(`remedial ${item.target}: dropped (no open stage left)`);
+        continue;
+      }
+      repaired.push(`remedial ${item.target}: moved before the first open stage`);
+      at = firstOpen;
+    }
+    if (count >= MAX_REMEDIALS) {
+      repaired.push(`remedial ${item.target}: dropped (more than ${MAX_REMEDIALS})`);
+      continue;
+    }
+    count += 1;
+    before.set(at, [...(before.get(at) ?? []), item]);
+  }
+  const items = order.flatMap((id) => [...(before.get(id) ?? []), stageItems.get(id)!]);
+  let changeNote = clean(raw["changeNote"]);
+  if (hasLink(changeNote)) return checked<LearningPlan>(null, ["change note contains a link"], repaired);
+  if (!changeNote || !inLanguage(changeNote, lang)) {
+    changeNote = t(lang, "Your plan was updated from your latest answers.", "حُدّثت خطتك بناءً على إجاباتك الأخيرة.");
+    repaired.push("change note: replaced with a default");
+  }
+  return checked({ items, changeNote }, [], repaired);
 }
 
 /** Text may mention only the project's parts and the controllers, like the quiz check. */
@@ -291,63 +432,50 @@ function mentionsForeignPart(ctx: MentorContext, texts: string[]) {
 }
 
 export type MentorValidation =
-  | { ok: true; diagnosis: Diagnosis; plan: LearningPlan }
-  | { ok: false; error: string };
+  | { ok: true; diagnosis: Diagnosis; plan: LearningPlan; repaired: string[] }
+  | { ok: false; error: string; rejected: string[]; repaired: string[] };
 
+/** Diagnosis and plan together: repaired where safe, rejected on safety rules (listed in `rejected`). */
 export function validateMentorInsight(raw: unknown, ctx: MentorContext): MentorValidation {
-  if (!isRecord(raw)) return { ok: false, error: "not an object" };
+  const fail = (rejected: string[], repaired: string[] = []): MentorValidation => ({
+    ok: false,
+    error: rejected.join("; "),
+    rejected,
+    repaired,
+  });
+  if (!isRecord(raw)) return fail(["not an object"]);
   const diagnosis = validateDiagnosis(raw["diagnosis"], ctx);
-  if (typeof diagnosis === "string") return { ok: false, error: diagnosis };
-  const plan = validatePlan(raw["plan"], ctx, diagnosis);
-  if (typeof plan === "string") return { ok: false, error: plan };
+  if (!diagnosis.value) return fail(diagnosis.rejected, diagnosis.repaired);
+  const plan = validatePlan(raw["plan"], ctx, diagnosis.value);
+  const repaired = [...diagnosis.repaired, ...plan.repaired.map((r) => `plan: ${r}`)];
+  if (!plan.value) return fail(plan.rejected.map((r) => `plan: ${r}`), repaired);
   const texts = [
-    diagnosis.summary,
-    diagnosis.confidenceNote,
-    ...diagnosis.misconceptions.map((m) => m.text),
-    ...plan.items.flatMap((i) => [i.reason, i.explanation]),
-    plan.changeNote,
+    diagnosis.value.summary,
+    diagnosis.value.confidenceNote,
+    ...diagnosis.value.misconceptions.map((m) => m.text),
+    ...plan.value.items.flatMap((i) => [i.reason, i.explanation]),
+    plan.value.changeNote,
   ];
-  if (mentionsForeignPart(ctx, texts)) return { ok: false, error: "mentions a part outside the project" };
-  return { ok: true, diagnosis, plan };
+  if (mentionsForeignPart(ctx, texts)) return fail(["mentions a part outside the project"], repaired);
+  return { ok: true, diagnosis: diagnosis.value, plan: plan.value, repaired };
 }
 
 /** One Gemini request for diagnosis and plan together, no retries. Throws AiSuggestionError. */
 export async function requestMentorInsight(
   ctx: MentorContext,
-  { client, model, timeoutMs }: { client: AiClient; model: string; timeoutMs: number },
+  call: StructuredCall,
 ): Promise<{ diagnosis: Diagnosis; plan: LearningPlan }> {
-  const controller = new AbortController();
-  let timedOut = false;
-  const timer = setTimeout(() => {
-    timedOut = true;
-    controller.abort();
-  }, timeoutMs);
-  let text: string;
-  try {
-    const response = await client.models.generateContent({
-      model,
-      contents: buildMentorPrompt(ctx),
-      config: {
-        systemInstruction: buildMentorSystemPrompt(ctx.language),
-        responseMimeType: "application/json",
-        responseJsonSchema: buildMentorSchema(ctx),
-        maxOutputTokens: 8192,
-        abortSignal: controller.signal,
-      },
-    });
-    text = responseText(response);
-  } catch (error) {
-    throw new AiSuggestionError(classifyError(error, timedOut));
-  } finally {
-    clearTimeout(timer);
-  }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw new AiSuggestionError("bad-response");
-  }
-  const result = validateMentorInsight(parsed, ctx);
-  if (!result.ok) throw new AiSuggestionError("bad-response");
-  return { diagnosis: result.diagnosis, plan: result.plan };
+  return generateStructured(call, {
+    feature: "mentor",
+    system: buildMentorSystemPrompt(ctx.language),
+    contents: buildMentorPrompt(ctx),
+    schema: buildMentorSchema(ctx),
+    // The log lists the exact rules that rejected the answer, or the repairs that were applied.
+    validate: (raw) => {
+      const result = validateMentorInsight(raw, ctx);
+      return result.ok
+        ? checked({ diagnosis: result.diagnosis, plan: result.plan }, [], result.repaired)
+        : checked<{ diagnosis: Diagnosis; plan: LearningPlan }>(null, result.rejected, result.repaired);
+    },
+  });
 }

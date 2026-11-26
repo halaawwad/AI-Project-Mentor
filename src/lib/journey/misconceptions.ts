@@ -187,11 +187,14 @@ export function exampleQuestions(stages: Stage[], skills: string[], seen: Set<st
   return chosen;
 }
 
+const short = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+
+/** Compact few-shot lines: prompt, options and the correct answer, with a short reason. */
 export function formatExampleQuestions(questions: Question[]) {
   return questions
     .map(
       (q) =>
-        `- [${q.skill} · ${q.difficulty}] ${q.prompt} | options: ${q.options.join(" / ")} | correct: ${q.options[q.correct]} | why: ${q.explanation}`,
+        `- [${q.skill} · ${q.difficulty}] ${short(q.prompt, 120)} | options: ${q.options.map((o) => short(o, 50)).join(" / ")} | correct: ${short(q.options[q.correct] ?? "", 50)} | why: ${short(q.explanation, 80)}`,
     )
     .join("\n");
 }

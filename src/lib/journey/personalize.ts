@@ -1,7 +1,8 @@
 import { AiSuggestionError, createAiClient, type AiClient } from "@/lib/suggest/aiEngine";
 import { readAiConfig, type AiConfig } from "@/lib/suggest/config";
 import { buildLocalQuiz, emptyHistory, initialProfile, planNextQuiz } from "./adaptive";
-import { requestAiQuiz } from "./aiQuiz";
+import { getAiCache, putAiCache } from "@/lib/ai/cache";
+import { requestAiQuiz, validateGeneratedQuiz, type AiQuizContext, type GeneratedQuiz } from "./aiQuiz";
 import {
   buildLocalInsight,
   cachedInsight,
@@ -10,8 +11,25 @@ import {
   previousPlanFor,
   type MentorContext,
 } from "./mentor";
-import { requestMentorInsight } from "./mentorAi";
+import { requestMentorInsight, validateMentorInsight } from "./mentorAi";
 import type { JourneyState, MentorInsight, PersonalizedQuiz, Stage } from "./types";
+
+/** Demo-cache checkpoint of a stage quiz: stage id and attempt number (0 = first attempt). */
+export const quizCheckpoint = (stageId: string, attempt: number) => `${stageId}#${attempt}`;
+
+/** A validated quiz in Gemini's response format, so a cached copy is validated the same way again. */
+export const rawQuiz = (quiz: GeneratedQuiz) => ({
+  explanation: quiz.explanation,
+  practiceTask: quiz.practiceTask,
+  questions: quiz.questions.map((q) => ({
+    prompt: q.prompt,
+    options: q.options,
+    correctIndex: q.correct,
+    explanation: q.explanation,
+    skill: q.skill,
+    difficulty: q.difficulty,
+  })),
+});
 
 /** The cached quiz for the stage's next attempt, if it is still valid. */
 export function cachedQuiz(state: JourneyState, stageId: string): PersonalizedQuiz | null {
@@ -50,30 +68,40 @@ export async function preparePersonalizedQuiz({
   const profile = state.profile ?? initialProfile(state.level ?? "intermediate");
   const plan = planNextQuiz(stages, index, profile, state.progress);
   const local = buildLocalQuiz(stages, index, plan, profile, learnerId, state.language);
-  const settings = config ?? readAiConfig();
-  if (!settings.apiKey) return { ...local, fallbackReason: "missing-key" };
   // The latest mentor analysis steers the quiz towards the identified misconceptions.
   const insight = latestInsight(state);
+  const ctx: AiQuizContext = {
+    stage,
+    plan,
+    profile,
+    language: state.language,
+    projectParts: state.parts.map((p) => p.key),
+    ...(insight ? { mentor: { source: insight.source, diagnosis: insight.diagnosis } } : {}),
+  };
+  const asAi = (generated: GeneratedQuiz): PersonalizedQuiz => ({
+    ...local,
+    id: `${stage.id}-ai-${learnerId}-${local.attempt + 1}`,
+    source: "ai",
+    explanation: generated.explanation,
+    practiceTask: generated.practiceTask,
+    questions: generated.questions,
+  });
+  // Demo cache: a validated earlier Gemini quiz for this learner, stage, attempt and language.
+  const checkpoint = quizCheckpoint(stage.id, local.attempt);
+  const stored = getAiCache(learnerId, "quiz", checkpoint, state.language);
+  const reused = stored ? validateGeneratedQuiz(stored.value, ctx) : null;
+  if (reused) return asAi(reused);
+  const settings = config ?? readAiConfig();
+  if (!settings.apiKey) return { ...local, fallbackReason: "missing-key" };
   try {
-    const generated = await requestAiQuiz(
-      {
-        stage,
-        plan,
-        profile,
-        language: state.language,
-        projectParts: state.parts.map((p) => p.key),
-        ...(insight ? { mentor: { source: insight.source, diagnosis: insight.diagnosis } } : {}),
-      },
-      { client: client ?? createAiClient(settings.apiKey), model: settings.model, timeoutMs: settings.timeoutMs },
-    );
-    return {
-      ...local,
-      id: `${stage.id}-ai-${learnerId}-${local.attempt + 1}`,
-      source: "ai",
-      explanation: generated.explanation,
-      practiceTask: generated.practiceTask,
-      questions: generated.questions,
-    };
+    const generated = await requestAiQuiz(ctx, {
+      client: client ?? createAiClient(settings.apiKey),
+      model: settings.model,
+      timeoutMs: settings.timeoutMs,
+      apiKey: settings.apiKey,
+    });
+    putAiCache({ feature: "quiz", learner: learnerId, checkpoint, language: state.language, value: rawQuiz(generated) });
+    return asAi(generated);
   } catch (error) {
     return { ...local, fallbackReason: error instanceof AiSuggestionError ? error.reason : "bad-response" };
   }
@@ -91,6 +119,7 @@ export function mentorContext(state: JourneyState, stages: Stage[], checkpoint: 
     projectTitle: state.project?.title.en ?? "",
     projectParts: state.parts.map((p) => p.key),
     previous: previousPlanFor(state.mentor, checkpoint, state.language),
+    lockedOrder: state.mentor?.checkpoint === checkpoint ? state.mentor.order : null,
   };
 }
 
@@ -123,6 +152,18 @@ export async function prepareMentorInsight({
   if (cached && !force) return cached;
   const ctx = mentorContext(state, stages, checkpoint);
   const local = buildLocalInsight(ctx, checkpoint, learnerId);
+  const asAi = (result: { diagnosis: MentorInsight["diagnosis"]; plan: MentorInsight["plan"] }): MentorInsight => ({
+    ...local,
+    id: `${checkpoint}-ai-${learnerId}-${state.language}`,
+    source: "ai",
+    ...result,
+  });
+  // Demo cache: reused only if it matches the learner's real answers as it is. If validation
+  // would have to repair it (e.g. a weak skill the learner now answered right), it was made for
+  // other answers, so one fresh request is made instead.
+  const stored = force ? null : getAiCache(learnerId, "mentor", checkpoint, state.language);
+  const reused = stored ? validateMentorInsight(stored.value, ctx) : null;
+  if (reused?.ok && !reused.repaired.length) return asAi(reused);
   const settings = config ?? readAiConfig();
   if (!settings.apiKey) return { ...local, fallbackReason: "missing-key" };
   try {
@@ -130,8 +171,10 @@ export async function prepareMentorInsight({
       client: client ?? createAiClient(settings.apiKey),
       model: settings.model,
       timeoutMs: settings.timeoutMs,
+      apiKey: settings.apiKey,
     });
-    return { ...local, id: `${checkpoint}-ai-${learnerId}-${state.language}`, source: "ai", ...result };
+    putAiCache({ feature: "mentor", learner: learnerId, checkpoint, language: state.language, value: result });
+    return asAi(result);
   } catch (error) {
     return { ...local, fallbackReason: error instanceof AiSuggestionError ? error.reason : "bad-response" };
   }

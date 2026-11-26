@@ -12,6 +12,7 @@ import {
   Target,
   TriangleAlert,
 } from "lucide-react";
+import { StillWorking } from "@/components/AiLabel";
 import { quizFallbackReasons } from "@/components/journey/Personalization";
 import { Button } from "@/components/ui/button";
 import { skillLabel } from "@/lib/journey/i18n";
@@ -93,7 +94,8 @@ export function MentorAnalysisPanel({ mentor, language }: { mentor: Mentor; lang
     return mentor.preparing ? (
       <section className="glass-panel rounded-[22px] p-5" aria-label="Mentor analysis" aria-busy="true">
         <p className="flex items-center gap-2 text-sm">
-          <Loader2 className="animate-spin" size={16} /> Analysing your answers… · جارٍ تحليل إجاباتك…
+          <Loader2 className="animate-spin" size={16} /> Analysing your answers… · جارٍ تحليل إجاباتك…{" "}
+          <StillWorking active />
         </p>
       </section>
     ) : null;
@@ -114,7 +116,8 @@ export function MentorAnalysisPanel({ mentor, language }: { mentor: Mentor; lang
       </div>
       {mentor.stale && (
         <p className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground" aria-busy="true">
-          <Loader2 className="animate-spin" size={12} /> Updating with your latest answers… · جارٍ التحديث بإجاباتك الأخيرة…
+          <Loader2 className="animate-spin" size={12} /> Updating with your latest answers… · جارٍ التحديث بإجاباتك الأخيرة…{" "}
+          <StillWorking active />
         </p>
       )}
       <p dir={dir} className="mt-2 text-sm leading-7">
