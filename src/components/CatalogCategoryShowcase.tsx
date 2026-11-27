@@ -90,7 +90,7 @@ export function CatalogCategoryShowcase({
     >
       <div className="category-showcase-top">
         <span>
-          <CircuitBoard size={14} /> THE ENGINEER’S WORKBENCH
+          <CircuitBoard size={14} /> Component catalog <span dir="rtl">· كتالوج المكونات</span>
         </span>
         <div className="catalog-workbench-tools">
           <button aria-pressed={index < 0} onClick={() => onCategory("All")}>
@@ -102,14 +102,15 @@ export function CatalogCategoryShowcase({
       <div className="category-showcase-stage" key={category}>
         <div className="category-showcase-copy">
           <span className="category-showcase-index">
-            {String(active + 1).padStart(2, "0")} / 08 — EXPLORE
+            {index < 0 ? "All categories" : `Category ${active + 1} of 8`}
           </span>
           <h2>
             {index < 0 ? (
               <>
-                One part.
-                <br />
-                <em>Endless possibilities.</em>
+                Find the parts for your project.
+                <span dir="rtl" lang="ar" className="mt-2 block text-[0.62em] font-medium">
+                  ابحث عن قطع مشروعك.
+                </span>
               </>
             ) : (
               labels[active]
@@ -173,7 +174,7 @@ export function CatalogCategoryShowcase({
           <span className="category-rotate-hint">Drag the part to explore · Motion demo</span>
         </div>
         <div className="category-showcase-detail">
-          <span className="category-featured-label">IN THE SPOTLIGHT</span>
+          <span className="category-featured-label">Selected part</span>
           <h3>{item.name}</h3>
           <p>{item.key}</p>
           <button className="category-detail-button" onClick={() => onDetails(item)}>
@@ -193,7 +194,7 @@ export function CatalogCategoryShowcase({
       </div>
       <div className="workbench-parts-shelf">
         <div className="workbench-shelf-label">
-          <span>ON YOUR BENCH</span>
+          <span>On your bench</span>
           <small>
             Pick a part to bring it to life <ArrowRight size={12} />
           </small>

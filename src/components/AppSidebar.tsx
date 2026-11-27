@@ -38,12 +38,15 @@ export function AppSidebar({
   const navigate = useNavigate();
   return (
     <aside
-      className={`glass-panel glass-strong workspace-sidebar fixed inset-y-2.5 left-2.5 z-40 flex w-[220px] shrink-0 flex-col rounded-[18px] px-2.5 py-3 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-[110%]"} ${className}`}
+      className={`glass-panel glass-strong workspace-sidebar fixed inset-y-2.5 start-2.5 z-40 flex w-[228px] shrink-0 flex-col rounded-panel px-2.5 py-3 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-[110%] rtl:translate-x-[110%]"} ${className}`}
     >
       <div className="flex items-center justify-between px-3 pb-5 pt-2 lg:pb-6">
         <div>
           <AipmBrand size={16} />
-          <div className="text-[10px] font-medium text-muted-foreground">AI Project Mentor</div>
+          <div className="mt-0.5 text-xs text-muted-foreground">
+            AI Project Mentor
+            <span dir="rtl" className="block">المرشد الذكي للمشاريع</span>
+          </div>
         </div>
         <Button
           variant="ghost"
@@ -65,14 +68,14 @@ export function AppSidebar({
               onClose();
               if (active !== label) void navigate({ to });
             }}
-            className={`h-10 w-full justify-start gap-3 rounded-[11px] px-3 text-[13px] font-medium shadow-none ${active === label ? "bg-mint text-mint-foreground hover:bg-mint" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground"}`}
+            className={`ds-nav-item h-10 w-full justify-start gap-3 rounded-md px-3 text-[13.5px] font-medium shadow-none ${active === label ? "" : "text-muted-foreground hover:bg-accent hover:text-foreground"}`}
           >
             <Icon className="!size-[18px]" strokeWidth={2.2} />
             {label}
           </Button>
         ))}
       </nav>
-      <p className="mt-auto px-3 pt-4 text-[10px] leading-4 text-muted-foreground">
+      <p className="mt-auto border-t border-border px-3 pt-4 text-xs leading-5 text-muted-foreground">
         Local demo · your BOM and circuits are saved in this browser only.
         <span dir="rtl" className="mt-1 block">
           نسخة تجريبية محلية · تُحفظ بياناتك في هذا المتصفح فقط.

@@ -92,7 +92,7 @@ export function MentorAnalysisPanel({ mentor, language }: { mentor: Mentor; lang
   const insight = mentor.shown;
   if (!insight)
     return mentor.preparing ? (
-      <section className="glass-panel rounded-[22px] p-5" aria-label="Mentor analysis" aria-busy="true">
+      <section className="glass-panel rounded-panel p-5" aria-label="Mentor analysis" aria-busy="true">
         <p className="flex items-center gap-2 text-sm">
           <Loader2 className="animate-spin" size={16} /> Analysing your answers… · جارٍ تحليل إجاباتك…{" "}
           <StillWorking active />
@@ -104,7 +104,7 @@ export function MentorAnalysisPanel({ mentor, language }: { mentor: Mentor; lang
   const dir = dirOf(lang);
   const ai = insight.source === "ai";
   return (
-    <section className="glass-panel rounded-[22px] p-5" aria-label="Mentor analysis">
+    <section className="glass-panel rounded-panel p-5" aria-label="Mentor analysis">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="flex items-center gap-2 text-base font-bold">
           <Brain size={17} /> Mentor analysis <span dir="rtl" className="font-normal">· تحليل المرشد</span>
@@ -211,7 +211,7 @@ export function WhatChanged({ mentor, stages }: { mentor: Mentor; stages: Stage[
   const lang = insight.language;
   const changes = planChanges(mentor.previous.items, insight.plan.items);
   return (
-    <section className="glass-panel rounded-[22px] border-s-4 border-primary p-4" aria-label="What changed and why">
+    <section className="glass-panel rounded-panel border-s-4 border-primary p-4" aria-label="What changed and why">
       <h2 className="flex items-center gap-2 text-sm font-bold">
         <GitCompareArrows size={15} /> What changed and why <span dir="rtl" className="font-normal">· ما الذي تغيّر ولماذا</span>
       </h2>

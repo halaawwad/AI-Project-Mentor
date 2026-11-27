@@ -59,7 +59,7 @@ export function BomPage() {
           className="lg:sticky lg:top-4 lg:h-[calc(100vh-32px)]"
         />
         <main className="min-w-0 flex-1 space-y-4 pb-6">
-          <header className="glass-panel flex flex-wrap items-center gap-3 rounded-[22px] p-5">
+          <header className="glass-panel flex flex-wrap items-center gap-3 rounded-panel p-5">
             <Button
               variant="ghost"
               size="icon"
@@ -70,13 +70,13 @@ export function BomPage() {
               <Menu />
             </Button>
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground">
-                WHAT THE BUILD IS MADE OF
+              <p className="ds-kicker">
+                What the build is made of
               </p>
-              <h1 className="text-2xl font-bold">Bill of Materials</h1>
-              <p dir="rtl" className="text-xs text-muted-foreground">
-                قائمة القطع
-              </p>
+              <div className="ds-heading mt-1">
+                <h1 className="ds-title">Bill of Materials</h1>
+                <p dir="rtl" lang="ar" className="ds-title">قائمة القطع</p>
+              </div>
             </div>
             <span className="rounded-full bg-mint px-3 py-1 text-xs font-semibold text-mint-foreground">
               {units} units · {rows.length} parts
@@ -97,7 +97,7 @@ export function BomPage() {
             </div>
           )}
           {rows.length ? (
-            <section className="glass-panel rounded-[22px] p-4" aria-label="BOM entries">
+            <section className="glass-panel rounded-panel p-4" aria-label="BOM entries">
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm">
                   <thead className="text-[11px] uppercase tracking-wide text-muted-foreground">
@@ -230,7 +230,7 @@ export function BomPage() {
               </div>
             </section>
           ) : (
-            <section className="glass-panel rounded-[22px] p-10 text-center">
+            <section className="glass-panel rounded-panel p-10 text-center">
               <Package className="mx-auto text-primary" />
               <h2 className="mt-3 text-sm font-bold">Your BOM is empty</h2>
               <p className="mt-2 text-xs text-muted-foreground">

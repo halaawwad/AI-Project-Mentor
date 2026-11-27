@@ -451,7 +451,7 @@ export function HardwareLab({
       <Toaster position="bottom-center" />
       {/* ===== Toolbar */}
       <header className="lab-main-toolbar flex h-14 shrink-0 items-center gap-1 border-b bg-panel px-3">
-        <div className="flex items-center gap-2 pr-3">
+        <div className="flex items-center gap-2 pe-3">
           <div className="leading-tight">
             <div className="flex items-center gap-1">
               <AipmBrand size={11} />
@@ -623,12 +623,12 @@ export function HardwareLab({
               </div>
             </div>
             <div className="relative">
-              <Search className="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Search className="absolute start-2 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder="Search parts…"
-                className="h-8 pl-7 text-sm"
+                className="h-8 ps-7 text-sm"
               />
             </div>
             <div className="flex flex-wrap gap-1">

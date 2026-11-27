@@ -38,8 +38,8 @@ export function LevelPage() {
 
   if (!journey.project || !journey.parts.length)
     return (
-      <JourneyLayout step="parts" eyebrow="LEVEL CHECK" title="Choose your parts first" arabic="اختر القطع أولاً">
-        <section className="glass-panel rounded-[22px] p-6 text-sm">
+      <JourneyLayout step="parts" eyebrow="Level check" title="Choose your parts first" arabic="اختر القطع أولاً">
+        <section className="glass-panel rounded-panel p-6 text-sm">
           <p>The level check comes after you have a parts list.</p>
           <div className="mt-3 flex flex-wrap gap-2">
             <Button asChild>
@@ -57,12 +57,12 @@ export function LevelPage() {
   return (
     <JourneyLayout
       step="level"
-      eyebrow={`LEVEL CHECK · ${journey.project.title.en.toUpperCase()}`}
+      eyebrow={`Level check · ${journey.project.title.en}`}
       title="Quick level check"
       arabic="تحديد المستوى السريع"
       actions={<DemoBadge />}
     >
-      <section className="glass-panel rounded-[22px] p-5" aria-labelledby="self-rating">
+      <section className="glass-panel rounded-panel p-5" aria-labelledby="self-rating">
         <h2 id="self-rating" className="text-sm font-bold">
           1. How would you describe yourself? <span dir="rtl" className="font-normal">· كيف تصف نفسك؟</span>
         </h2>
@@ -93,7 +93,7 @@ export function LevelPage() {
         </div>
       </section>
 
-      <section className="glass-panel space-y-4 rounded-[22px] p-5" aria-label="Quick questions">
+      <section className="glass-panel space-y-4 rounded-panel p-5" aria-label="Quick questions">
         {levelQuestions.map((question, qi) => (
           <fieldset key={question.id} dir={questionDir(question, lang)}>
             <legend className="text-sm font-bold">
@@ -128,7 +128,7 @@ export function LevelPage() {
       </section>
 
       {result && (
-        <section role="status" className="glass-panel rounded-[22px] p-5">
+        <section role="status" className="glass-panel rounded-panel p-5">
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-xs text-muted-foreground">
               {result.correct} of {levelQuestions.length} answers correct · level score {result.score} / 5

@@ -143,7 +143,7 @@ export function DescribePage() {
         />
         <main className="min-w-0 flex-1 space-y-4 pb-6">
           <JourneyIndicator current={result ? "parts" : "idea"} />
-          <header className="glass-panel flex flex-wrap items-center gap-3 rounded-[22px] p-5">
+          <header className="glass-panel flex flex-wrap items-center gap-3 rounded-panel p-5">
             <Button
               variant="ghost"
               size="icon"
@@ -154,17 +154,17 @@ export function DescribePage() {
               <Menu />
             </Button>
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground">
-                FROM IDEA TO PARTS LIST
+              <p className="ds-kicker">
+                From idea to parts list
               </p>
-              <h1 className="text-2xl font-bold">Describe your project</h1>
-              <p dir="rtl" className="text-xs text-muted-foreground">
-                صف مشروعك
-              </p>
+              <div className="ds-heading mt-1">
+                <h1 className="ds-title">Describe your project</h1>
+                <p dir="rtl" lang="ar" className="ds-title">صف مشروعك</p>
+              </div>
             </div>
           </header>
 
-          <section className="glass-panel rounded-[22px] p-5" aria-label="Project description">
+          <section className="glass-panel rounded-panel p-5" aria-label="Project description">
             <label htmlFor="project-description" className="text-sm font-semibold">
               What do you want to build? <span dir="rtl">· ماذا تريد أن تبني؟</span>
             </label>
@@ -191,7 +191,7 @@ export function DescribePage() {
               </Button>
               <StillWorking active={loading} />
               <span className="text-[11px] font-semibold text-muted-foreground">
-                <Lightbulb size={12} className="mr-1 inline" />
+                <Lightbulb size={12} className="me-1 inline" />
                 Examples · أمثلة:
               </span>
               {exampleProjects.map((example) => (
@@ -216,7 +216,7 @@ export function DescribePage() {
           </section>
 
           {result && !loading && (
-            <section className="glass-panel rounded-[22px] p-5" aria-label="Suggested parts">
+            <section className="glass-panel rounded-panel p-5" aria-label="Suggested parts">
               <SourceLabel result={result} />
               {result.summary && (
                 <p dir={dir} className="mt-3 text-sm leading-7">

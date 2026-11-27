@@ -11,28 +11,21 @@ import { resetDemo, useJourney } from "@/lib/journey/store";
 export function JourneyIndicator({ current }: { current: JourneyStepId }) {
   const index = journeySteps.findIndex((step) => step.id === current);
   return (
-    <nav aria-label="Journey progress" className="glass-panel rounded-[18px] px-4 py-3">
-      <ol className="flex flex-wrap items-center gap-x-1 gap-y-2">
+    <nav aria-label="Journey progress" className="glass-panel rounded-panel px-4 py-3">
+      <ol className="ds-wire">
         {journeySteps.map((step, i) => {
           const state = i < index ? "done" : i === index ? "current" : "todo";
           return (
-            <li key={step.id} className="flex items-center gap-1" aria-current={state === "current" ? "step" : undefined}>
-              <span
-                className={`flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                  state === "current"
-                    ? "bg-primary text-primary-foreground"
-                    : state === "done"
-                      ? "bg-mint text-mint-foreground"
-                      : "text-muted-foreground"
-                }`}
-              >
-                {state === "done" ? <Check size={11} /> : <span className="font-mono">{i + 1}</span>}
+            <li key={step.id} aria-current={state === "current" ? "step" : undefined}>
+              {i > 0 && <span className="ds-wire-seg" data-done={i <= index} aria-hidden="true" />}
+              <span className="ds-wire-point" data-state={state}>
+                {state === "done" ? <Check size={11} strokeWidth={3} aria-hidden="true" /> : <i aria-hidden="true" />}
                 {step.en}
                 <span dir="rtl" className="font-normal opacity-80">
-                  · {step.ar}
+                  {step.ar}
                 </span>
+                {state === "done" && <span className="sr-only">(done)</span>}
               </span>
-              {i < journeySteps.length - 1 && <span className="text-muted-foreground" aria-hidden="true">→</span>}
             </li>
           );
         })}
@@ -44,7 +37,7 @@ export function JourneyIndicator({ current }: { current: JourneyStepId }) {
 /** Honest label for prewritten or generated learning content. */
 export function DemoBadge({ generated = false }: { generated?: boolean }) {
   return (
-    <span className="inline-flex items-center gap-1 rounded-full border border-border bg-card px-2.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+    <span className="inline-flex items-center gap-1 rounded-[4px] border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
       {generated ? "Generated from catalog data · " : ""}Demo content <span dir="rtl">· محتوى تجريبي</span>
     </span>
   );
@@ -115,7 +108,7 @@ export function JourneyLayout({
             <div className="min-w-0 flex-1">{step && <JourneyIndicator current={step} />}</div>
             <LanguageToggle language={journey.language} />
           </div>
-          <header className="glass-panel flex flex-wrap items-center gap-3 rounded-[22px] p-5">
+          <header className="glass-panel flex flex-wrap items-center gap-3 rounded-panel p-5 lg:px-7 lg:py-6">
             <Button
               variant="ghost"
               size="icon"
@@ -126,11 +119,13 @@ export function JourneyLayout({
               <Menu />
             </Button>
             <div className="min-w-0 flex-1">
-              <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground">{eyebrow}</p>
-              <h1 className="text-2xl font-bold">{title}</h1>
-              <p dir="rtl" className="text-xs text-muted-foreground">
-                {arabic}
-              </p>
+              <p className="ds-kicker">{eyebrow}</p>
+              <div className="ds-heading mt-1">
+                <h1 className="ds-title">{title}</h1>
+                <p dir="rtl" lang="ar" className="ds-title">
+                  {arabic}
+                </p>
+              </div>
             </div>
             {actions}
           </header>

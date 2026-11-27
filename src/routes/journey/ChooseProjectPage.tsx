@@ -36,12 +36,12 @@ export function ChooseProjectPage() {
   return (
     <JourneyLayout
       step="idea"
-      eyebrow="NO IDEA YET? START HERE"
+      eyebrow="No idea yet? Start here"
       title="Choose a learning project"
       arabic="اختر مشروعاً تعليمياً"
       actions={<DemoBadge />}
     >
-      <p className="glass-panel rounded-[18px] p-4 text-sm leading-6">
+      <p className="glass-panel rounded-panel p-4 text-sm leading-6">
         Start with the traffic light, then move on to the parking sensor. Each project loads its parts
         into your BOM and comes with a full learning path.
         <span dir="rtl" className="block text-xs text-muted-foreground">
@@ -55,9 +55,9 @@ export function ChooseProjectPage() {
       )}
       <div className="grid gap-4 xl:grid-cols-3">
         {learningProjects.map((project, index) => (
-          <section key={project.id} className="glass-panel flex flex-col rounded-[22px] p-5" aria-label={project.title.en}>
-            <span className="text-[10px] font-semibold tracking-[0.16em] text-muted-foreground">
-              {String(index + 1).padStart(2, "0")} · {project.difficulty.en.toUpperCase()}{" "}
+          <section key={project.id} className="glass-panel flex flex-col rounded-panel p-5" aria-label={project.title.en}>
+            <span className="ds-kicker">
+              Project {index + 1} · {project.difficulty.en}{" "}
               <span dir="rtl">· {project.difficulty.ar}</span>
             </span>
             <h2 dir={dir} className="mt-1 text-lg font-bold">
@@ -94,7 +94,7 @@ export function ChooseProjectPage() {
       <p className="text-xs text-muted-foreground">
         Have your own idea?{" "}
         <Link to="/describe" className="font-semibold underline">
-          <Sparkles size={12} className="mr-1 inline" />
+          <Sparkles size={12} className="me-1 inline" />
           Describe your project
         </Link>{" "}
         instead.

@@ -43,7 +43,7 @@ export function WhyThisQuizCard({ quiz }: { quiz: PersonalizedQuiz }) {
   const dir = quiz.language === "ar" ? "rtl" : "ltr";
   const lang = quiz.language;
   return (
-    <section className="glass-panel rounded-[22px] p-5" aria-label="Why this quiz">
+    <section className="glass-panel rounded-panel p-5" aria-label="Why this quiz">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-base font-bold">
           Why this quiz <span dir="rtl" className="font-normal">· لماذا هذا الاختبار</span>
@@ -115,7 +115,7 @@ export function SkillsPanel({
   const assessed = skills.filter((skill) => profile.mastery[skill] !== undefined);
   const pending = skills.length - assessed.length;
   return (
-    <section className="glass-panel rounded-[22px] p-5" aria-label="Skills and mastery">
+    <section className="glass-panel rounded-panel p-5" aria-label="Skills and mastery">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="text-sm font-bold">
           {title} <span dir="rtl" className="font-normal">· مهاراتك</span>

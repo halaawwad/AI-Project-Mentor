@@ -63,8 +63,8 @@ export function NewComponentPage() {
   };
   const value = result?.value;
   return (
-    <JourneyLayout step="parts" eyebrow="NEW COMPONENT" title="Add a new component" arabic="إضافة قطعة جديدة">
-      <section className="glass-panel rounded-[22px] p-5">
+    <JourneyLayout step="parts" eyebrow="New component" title="Add a new component" arabic="إضافة قطعة جديدة">
+      <section className="glass-panel rounded-panel p-5">
         <p className="text-sm">
           The catalog has 43 parts. For another part, the mentor can describe it in general terms. It doesn't search the web
           and never invents datasheet links or 3D models.
@@ -99,7 +99,7 @@ export function NewComponentPage() {
       </section>
 
       {value?.kind === "catalog" && (
-        <section className="glass-panel rounded-[22px] p-5 text-sm" role="status">
+        <section className="glass-panel rounded-panel p-5 text-sm" role="status">
           <p className="font-semibold">
             {value.item.name} is already in the catalog · موجودة في الكتالوج
           </p>
@@ -115,7 +115,7 @@ export function NewComponentPage() {
         <p className="text-sm text-destructive">Enter a part name of 2–60 characters.</p>
       )}
       {value?.kind === "none" && (
-        <section className="glass-panel rounded-[22px] p-5 text-sm" role="status">
+        <section className="glass-panel rounded-panel p-5 text-sm" role="status">
           <p className="font-semibold">No information for “{result!.name}” · لا توجد معلومات</p>
           <p className="text-xs text-muted-foreground">
             There is no local content for parts outside the catalog, and nothing was made up.
@@ -124,7 +124,7 @@ export function NewComponentPage() {
         </section>
       )}
       {value?.kind === "ai" && (
-        <section className="glass-panel space-y-3 rounded-[22px] p-5" aria-label="AI information">
+        <section className="glass-panel space-y-3 rounded-panel p-5" aria-label="AI information">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-bold">{value.info.name}</h2>
             <span className="inline-flex items-center gap-1 rounded-full bg-soft-amber px-2.5 py-0.5 text-[11px] font-semibold">
@@ -181,9 +181,9 @@ export function NewComponentPage() {
 
       <ol className="grid gap-4 md:grid-cols-3">
         {plannedSteps.map(({ icon: Icon, title, arabic, text }, i) => (
-          <li key={title} className="glass-panel rounded-[22px] p-5 opacity-80">
-            <span className="text-[10px] font-semibold tracking-[0.16em] text-muted-foreground">
-              STEP {i + 1} · COMING SOON
+          <li key={title} className="glass-panel rounded-panel p-5 opacity-80">
+            <span className="ds-kicker">
+              Step {i + 1} · Coming soon
             </span>
             <h2 className="mt-2 flex items-center gap-2 text-sm font-bold">
               <Icon size={16} /> {title}

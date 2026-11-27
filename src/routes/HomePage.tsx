@@ -1,16 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import {
-  ArrowRight,
-  Box,
-  Compass,
-  Cpu,
-  GraduationCap,
-  Lightbulb,
-  Menu,
-  Package,
-  Sparkles,
-} from "lucide-react";
+import { Box, Compass, Cpu, GraduationCap, Lightbulb, Menu, Package, Sparkles } from "lucide-react";
 import { AipmBrand } from "@/components/AipmBrand";
 import { AppSidebar } from "@/components/AppSidebar";
 import { ResetDemoButton } from "@/components/journey/JourneyUi";
@@ -62,6 +52,13 @@ export function HomePage() {
       meta: "Circuits saved locally",
     },
   ] as const;
+  // Dividers between the four tools: stacked on mobile, 2 × 2 from md, one row from 2xl.
+  const toolBorders = [
+    "",
+    "border-t md:border-t-0 md:border-s",
+    "border-t 2xl:border-t-0 2xl:border-s",
+    "border-t md:border-s 2xl:border-t-0",
+  ];
   const steps = [
     "Describe your idea (or pick a learning project) and approve the parts list.",
     "Take a quick level check, then follow the learning path: lesson, 3D parts, practice, quiz.",
@@ -84,60 +81,56 @@ export function HomePage() {
           className="lg:sticky lg:top-4 lg:h-[calc(100vh-32px)]"
         />
         <main className="min-w-0 flex-1 space-y-4 pb-6">
-          <section className="glass-panel glass-strong rounded-[28px] p-6 lg:p-10">
-            <div className="flex items-start justify-between gap-3">
-              <AipmBrand size={22} />
-              <Button
-                variant="ghost"
-                size="icon"
-                className="lg:hidden"
-                aria-label="Open menu"
-                onClick={() => setMenu(true)}
-              >
+          <section className="ds-hero glass-panel rounded-panel px-6 pb-7 pt-6 lg:px-12 lg:pb-12 lg:pt-9">
+            <div className="flex items-start justify-between gap-3 lg:hidden">
+              <AipmBrand size={20} />
+              <Button variant="ghost" size="icon" aria-label="Open menu" onClick={() => setMenu(true)}>
                 <Menu />
               </Button>
             </div>
-            <p className="mt-8 text-[10px] font-semibold tracking-[0.2em] text-muted-foreground">
-              AI PROJECT MENTOR
-            </p>
-            <h1 className="mt-2 max-w-3xl text-3xl font-bold leading-tight lg:text-5xl">
-              Learn electronics through your own project.
-            </h1>
-            <p dir="rtl" className="mt-3 max-w-3xl text-lg text-muted-foreground">
-              تعلّم الإلكترونيات من خلال مشروعك أنت.
-            </p>
-            <div className="mt-6 grid gap-3 md:grid-cols-2">
+            <div className="ds-bilingual mt-8 lg:mt-14">
+              <h1 className="ds-display max-w-[13ch] text-[clamp(2.25rem,4.6vw,4rem)]">
+                Learn electronics through your own project.
+              </h1>
+              <span className="ds-bilingual-rail" aria-hidden="true" />
+              <p dir="rtl" lang="ar" className="ds-display justify-self-end text-[clamp(2rem,4vw,3.5rem)]">
+                تعلّم الإلكترونيات من خلال مشروعك أنت.
+              </p>
+            </div>
+            <div className="mt-10 grid gap-3 md:grid-cols-2 lg:mt-14">
               <Link
                 to="/describe"
-                className="group flex items-center gap-4 rounded-[20px] bg-primary p-5 text-primary-foreground shadow-lg transition-transform hover:-translate-y-0.5"
+                className="group flex items-start gap-4 rounded-lg bg-primary p-5 text-primary-foreground transition-colors hover:bg-[var(--solder-deep)]"
               >
-                <Lightbulb size={30} className="shrink-0" />
+                <Lightbulb size={26} strokeWidth={1.8} className="mt-0.5 shrink-0" />
                 <span className="min-w-0 flex-1">
-                  <strong className="block text-lg">I have a project idea</strong>
-                  <span dir="rtl" className="block text-sm opacity-90">
-                    لدي فكرة مشروع
+                  <span className="ds-heading">
+                    <strong className="text-lg font-semibold">I have a project idea</strong>
+                    <span dir="rtl" lang="ar" className="text-base !text-primary-foreground/85">
+                      لدي فكرة مشروع
+                    </span>
                   </span>
-                  <span className="mt-1 block text-xs opacity-90">
+                  <span className="mt-1.5 block text-sm text-primary-foreground/85">
                     Describe it, review the suggested parts, then follow your learning path.
                   </span>
                 </span>
-                <ArrowRight className="shrink-0 transition-transform group-hover:translate-x-1" />
               </Link>
               <Link
                 to="/journey/choose"
-                className="glass-inset group flex items-center gap-4 rounded-[20px] p-5 transition-transform hover:-translate-y-0.5"
+                className="group flex items-start gap-4 rounded-lg border border-[var(--line-strong)] bg-card p-5 transition-colors hover:border-primary hover:bg-secondary/50"
               >
-                <Compass size={30} className="shrink-0 text-primary" />
+                <Compass size={26} strokeWidth={1.8} className="mt-0.5 shrink-0 text-primary" />
                 <span className="min-w-0 flex-1">
-                  <strong className="block text-lg">I don't have an idea yet</strong>
-                  <span dir="rtl" className="block text-sm text-muted-foreground">
-                    ليس لدي فكرة بعد
+                  <span className="ds-heading">
+                    <strong className="text-lg font-semibold">I don't have an idea yet</strong>
+                    <span dir="rtl" lang="ar" className="text-base">
+                      ليس لدي فكرة بعد
+                    </span>
                   </span>
-                  <span className="mt-1 block text-xs text-muted-foreground">
+                  <span className="mt-1.5 block text-sm text-muted-foreground">
                     Start with a learning project: traffic light, then parking sensor.
                   </span>
                 </span>
-                <ArrowRight className="shrink-0 transition-transform group-hover:translate-x-1" />
               </Link>
             </div>
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -151,41 +144,51 @@ export function HomePage() {
               <ResetDemoButton />
             </div>
           </section>
-          <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
-            {cards.map(({ to, icon: Icon, title, arabic, text, meta }) => (
+          <nav
+            aria-label="Tools"
+            className="glass-panel grid overflow-hidden rounded-panel md:grid-cols-2 2xl:grid-cols-4"
+          >
+            {cards.map(({ to, icon: Icon, title, arabic, text, meta }, index) => (
               <Link
                 key={to}
                 to={to}
-                className="glass-panel group flex flex-col rounded-[22px] p-5 transition-transform hover:-translate-y-0.5"
+                className={`group flex flex-col border-border p-5 transition-colors hover:bg-secondary/40 lg:p-6 ${toolBorders[index]}`}
               >
-                <span className="grid size-11 place-items-center rounded-xl bg-mint text-mint-foreground">
-                  <Icon size={20} />
+                <Icon size={22} strokeWidth={1.8} className="text-primary" aria-hidden="true" />
+                <span className="ds-heading mt-4">
+                  <h2 className="text-base font-semibold">{title}</h2>
+                  <span dir="rtl" lang="ar" className="text-sm">
+                    {arabic}
+                  </span>
                 </span>
-                <h2 className="mt-4 text-base font-bold">{title}</h2>
-                <p dir="rtl" className="text-xs text-muted-foreground">
-                  {arabic}
-                </p>
-                <p className="mt-2 flex-1 text-sm leading-6 text-muted-foreground">{text}</p>
-                <span className="mt-4 flex items-center justify-between text-xs font-semibold text-primary">
+                <p className="mt-2 max-w-[46ch] flex-1 text-sm leading-6 text-muted-foreground">{text}</p>
+                <span className="mt-4 text-[13px] font-medium text-[var(--solder-ink)] group-hover:underline group-hover:underline-offset-4">
                   {meta}
-                  <ArrowRight size={14} className="transition-transform group-hover:translate-x-1" />
                 </span>
               </Link>
             ))}
-          </div>
-          <section className="glass-panel rounded-[22px] p-5">
-            <h2 className="text-sm font-bold">Demo flow</h2>
-            <ol className="mt-3 grid gap-3 md:grid-cols-3">
+          </nav>
+          <section className="glass-panel rounded-panel p-5 lg:p-6">
+            <div className="ds-heading">
+              <h2 className="text-base font-semibold">Demo flow</h2>
+              <span dir="rtl" lang="ar" className="text-sm">
+                خطوات العرض
+              </span>
+            </div>
+            <ol className="mt-4 grid gap-3 md:grid-cols-3">
               {steps.map((step, index) => (
-                <li key={step} className="glass-inset flex gap-3 rounded-xl p-3 text-sm">
-                  <span className="font-mono text-xs font-bold text-primary">
-                    {String(index + 1).padStart(2, "0")}
+                <li key={step} className="flex gap-3 border-t-2 border-[var(--line-strong)] pt-3 text-sm leading-6">
+                  <span
+                    aria-hidden="true"
+                    className="grid size-6 shrink-0 place-items-center rounded-[4px] bg-foreground text-xs font-semibold tabular-nums text-card"
+                  >
+                    {index + 1}
                   </span>
                   {step}
                 </li>
               ))}
             </ol>
-            <p className="mt-4 text-[11px] leading-5 text-muted-foreground">
+            <p className="mt-5 max-w-[95ch] text-xs leading-5 text-muted-foreground">
               Only part suggestions use AI (Gemini, when an API key is configured; otherwise a local
               demo engine). Learning paths, quizzes and mentor feedback are prewritten demo content,
               or generated from catalog data, and are graded in your browser. Wiring checks are

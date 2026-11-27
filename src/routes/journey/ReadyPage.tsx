@@ -23,8 +23,8 @@ export function ReadyPage() {
     const statuses = stageStatuses(stages, journey.progress);
     const left = stages.filter((_, i) => statuses[i] !== "passed").length;
     return (
-      <JourneyLayout step="path" eyebrow="ALMOST THERE" title="Not ready yet" arabic="لم تصبح جاهزاً بعد">
-        <section className="glass-panel rounded-[22px] p-6 text-sm">
+      <JourneyLayout step="path" eyebrow="Almost there" title="Not ready yet" arabic="لم تصبح جاهزاً بعد">
+        <section className="glass-panel rounded-panel p-6 text-sm">
           <p>
             {stages.length
               ? `Pass the remaining ${left} stage${left === 1 ? "" : "s"} to finish your learning path.`
@@ -45,7 +45,7 @@ export function ReadyPage() {
   return (
     <JourneyLayout
       step="ready"
-      eyebrow="JOURNEY COMPLETE"
+      eyebrow="Journey complete"
       title="Ready to build your project"
       arabic="أنت جاهز لبناء مشروعك"
       actions={
@@ -55,7 +55,7 @@ export function ReadyPage() {
         </div>
       }
     >
-      <section className="glass-panel glass-strong rounded-[28px] p-6">
+      <section className="glass-panel glass-strong rounded-panel p-6">
         <p dir={dir} className="flex items-center gap-2 text-xl font-bold">
           <PartyPopper className="text-primary" /> {journey.project.title[lang]}
         </p>
@@ -79,7 +79,7 @@ export function ReadyPage() {
       </section>
       <SkillsPanel profile={journey.profile} stages={stages} language={lang} title="Final mastery per skill" />
       <div className="grid gap-4 xl:grid-cols-2">
-        <section className="glass-panel rounded-[22px] p-5" aria-label="Skills learned">
+        <section className="glass-panel rounded-panel p-5" aria-label="Skills learned">
           <h2 className="text-sm font-bold">
             Skills learned <span dir="rtl" className="font-normal">· المهارات المكتسبة</span>
           </h2>
@@ -111,7 +111,7 @@ export function ReadyPage() {
             })}
           </ol>
         </section>
-        <section className="glass-panel rounded-[22px] p-5" aria-label="Parts">
+        <section className="glass-panel rounded-panel p-5" aria-label="Parts">
           <h2 className="text-sm font-bold">
             Your parts <span dir="rtl" className="font-normal">· قطعك</span>
           </h2>

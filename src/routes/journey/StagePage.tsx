@@ -52,8 +52,8 @@ export function StagePage() {
 
   if (!stage)
     return (
-      <JourneyLayout step="path" eyebrow="LEARNING PATH" title="Stage not found" arabic="المرحلة غير موجودة">
-        <section className="glass-panel rounded-[22px] p-6 text-sm">
+      <JourneyLayout step="path" eyebrow="Learning path" title="Stage not found" arabic="المرحلة غير موجودة">
+        <section className="glass-panel rounded-panel p-6 text-sm">
           <p>This stage isn't part of this learner's current learning path.</p>
           <Button className="mt-3" asChild>
             <Link to="/journey">Back to the learning path</Link>
@@ -64,8 +64,8 @@ export function StagePage() {
 
   if (statuses[index] === "locked")
     return (
-      <JourneyLayout step="path" eyebrow={`STAGE ${index + 1}`} title={stage.title.en} arabic={stage.title.ar}>
-        <section className="glass-panel rounded-[22px] p-6 text-sm">
+      <JourneyLayout step="path" eyebrow={`Stage ${index + 1}`} title={stage.title.en} arabic={stage.title.ar}>
+        <section className="glass-panel rounded-panel p-6 text-sm">
           <p className="flex items-center gap-2 font-semibold">
             <Lock size={16} /> Locked · مقفلة
           </p>
@@ -145,13 +145,13 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
   return (
     <JourneyLayout
       step={phase === "learn" ? "path" : "quizzes"}
-      eyebrow={`STAGE ${index + 1} OF ${stages.length} · ${journey.project?.title.en.toUpperCase() ?? ""}`}
+      eyebrow={`Stage ${index + 1} of ${stages.length} · ${journey.project?.title.en ?? ""}`}
       title={stage.title.en}
       arabic={stage.title.ar}
       actions={<DemoBadge generated={stage.source === "generated"} />}
     >
       {!progress?.passed && !!remedials.length && (
-        <section className="glass-panel space-y-2 rounded-[22px] p-5" aria-label="Mini-lessons before this stage">
+        <section className="glass-panel space-y-2 rounded-panel p-5" aria-label="Mini-lessons before this stage">
           <h2 className="text-sm font-bold">
             Before this stage <span dir="rtl" className="font-normal">· قبل هذه المرحلة</span>
           </h2>
@@ -160,7 +160,7 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
           ))}
         </section>
       )}
-      <section className="glass-panel rounded-[22px] p-5" aria-label="Lesson">
+      <section className="glass-panel rounded-panel p-5" aria-label="Lesson">
         <div className="mb-2 flex flex-wrap items-center gap-2">
           {aiLesson.value ? (
             <AiSourceLabel source={aiLesson.value.source} />
@@ -263,7 +263,7 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
       )}
 
       {quiz && phase === "quiz" && (
-        <section id="stage-quiz" className="glass-panel space-y-4 rounded-[22px] p-5" aria-label="Stage quiz">
+        <section id="stage-quiz" className="glass-panel space-y-4 rounded-panel p-5" aria-label="Stage quiz">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-bold">
               Your quiz · {quiz.questions.length} questions <span dir="rtl" className="font-normal">· اختبارك</span>
@@ -310,7 +310,7 @@ function StageContent({ stage, index, stages }: { stage: Stage; index: number; s
 
       {quiz && grade && phase === "result" && (
         <section id="stage-result" className="space-y-4" aria-label="Quiz result">
-          <div role="status" className="glass-panel rounded-[22px] p-5">
+          <div role="status" className="glass-panel rounded-panel p-5">
             <p className="flex items-center gap-2 text-lg font-bold">
               {grade.passed ? <CheckCircle2 className="text-success" /> : <XCircle className="text-destructive" />}
               {grade.score}% · {grade.correct} of {grade.total} correct ·{" "}
@@ -427,7 +427,7 @@ function MentorPanel({
   );
   const notes = ai.value;
   return (
-    <div className="glass-panel rounded-[22px] p-5" aria-label="Mentor feedback">
+    <div className="glass-panel rounded-panel p-5" aria-label="Mentor feedback">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="flex items-center gap-2 text-base font-bold">
           <Sparkles size={17} /> Mentor feedback <span dir="rtl" className="font-normal">· ملاحظات المرشد</span>

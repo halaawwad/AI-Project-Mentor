@@ -40,7 +40,7 @@ export function InsightsPage() {
   return (
     <JourneyLayout
       active="Learning Insights"
-      eyebrow="LEARNING DATA"
+      eyebrow="Learning data"
       title="Learning insights"
       arabic="رؤى التعلّم"
       actions={
@@ -55,7 +55,7 @@ export function InsightsPage() {
         </Button>
       }
     >
-      <section className="glass-panel rounded-[22px] border-s-4 border-warning p-4" aria-label="About this data">
+      <section className="glass-panel rounded-panel border-s-4 border-warning p-4" aria-label="About this data">
         <p className="flex items-center gap-2 text-sm font-bold">
           <Info size={16} /> Local demo data — in the full platform this is aggregated across all students
         </p>
@@ -84,8 +84,8 @@ export function InsightsPage() {
           [insights.wrongAnswers, "Wrong answers", "إجابات خاطئة"],
           [insights.attempts, "Quiz attempts", "محاولات اختبار"],
         ].map(([value, en, ar]) => (
-          <div key={en} className="glass-panel rounded-[18px] p-4">
-            <p className="font-mono text-2xl font-bold">{value}</p>
+          <div key={en} className="glass-panel rounded-panel p-4">
+            <p className="ds-title text-3xl tabular-nums">{value}</p>
             <p className="text-xs text-muted-foreground">
               {en} <span dir="rtl">· {ar}</span>
             </p>
@@ -94,7 +94,7 @@ export function InsightsPage() {
       </section>
 
       {!insights.answers ? (
-        <section className="glass-panel rounded-[22px] p-6 text-sm">
+        <section className="glass-panel rounded-panel p-6 text-sm">
           <p>No answers saved on this device yet. Take the level check and a few quizzes first.</p>
           <Button className="mt-3" asChild>
             <Link to="/journey">Go to the learning journey</Link>
@@ -102,7 +102,7 @@ export function InsightsPage() {
         </section>
       ) : (
         <div className="grid gap-4 xl:grid-cols-2">
-          <section className="glass-panel rounded-[22px] p-5" aria-label="Most common misconceptions">
+          <section className="glass-panel rounded-panel p-5" aria-label="Most common misconceptions">
             <h2 className="flex items-center gap-2 text-sm font-bold">
               <TriangleAlert size={15} /> Most common misconceptions <span dir="rtl" className="font-normal">· أكثر المفاهيم الخاطئة شيوعاً</span>
             </h2>
@@ -128,7 +128,7 @@ export function InsightsPage() {
             )}
           </section>
 
-          <section className="glass-panel rounded-[22px] p-5" aria-label="Hardest questions">
+          <section className="glass-panel rounded-panel p-5" aria-label="Hardest questions">
             <h2 className="flex items-center gap-2 text-sm font-bold">
               <BarChart3 size={15} /> Hardest questions <span dir="rtl" className="font-normal">· أصعب الأسئلة</span>
             </h2>
@@ -139,7 +139,7 @@ export function InsightsPage() {
                   <li key={q.questionId} className="glass-inset rounded-lg p-3 text-sm">
                     <div className="flex items-start justify-between gap-2">
                       <p>{q.prompt}</p>
-                      <span className="shrink-0 font-mono text-sm font-bold">{q.rate}%</span>
+                      <span className="shrink-0 text-sm font-semibold tabular-nums">{q.rate}%</span>
                     </div>
                     <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-muted" role="meter" aria-valuemin={0} aria-valuemax={100} aria-valuenow={q.rate} aria-label={`${q.questionId} correct rate`}>
                       <div className="h-full rounded-full bg-destructive" style={{ width: `${Math.max(q.rate, 2)}%` }} />
@@ -155,7 +155,7 @@ export function InsightsPage() {
             )}
           </section>
 
-          <section className="glass-panel rounded-[22px] p-5 xl:col-span-2" aria-label="Explanations followed by a pass">
+          <section className="glass-panel rounded-panel p-5 xl:col-span-2" aria-label="Explanations followed by a pass">
             <h2 className="flex items-center gap-2 text-sm font-bold">
               <Lightbulb size={15} /> Which alternative explanations were followed by a pass{" "}
               <span dir="rtl" className="font-normal">· أي الشروحات البديلة تلاها نجاح</span>
@@ -180,7 +180,7 @@ export function InsightsPage() {
                       <td className="py-1.5">{e.stageTitle}</td>
                       <td className="py-1.5">{skillLabel(e.skill, lang)}</td>
                       <td className="py-1.5">{e.source === "ai" ? t(lang, "Gemini explanation", "شرح Gemini") : t(lang, "Prewritten notes + analogy", "ملاحظات مكتوبة مسبقاً + تشبيه")}</td>
-                      <td className="py-1.5 font-mono">
+                      <td className="py-1.5 tabular-nums">
                         {e.passed} / {e.shown}
                       </td>
                     </tr>

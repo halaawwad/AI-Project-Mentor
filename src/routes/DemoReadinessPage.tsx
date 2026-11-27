@@ -51,7 +51,7 @@ export function DemoReadinessPage() {
   return (
     <JourneyLayout
       active="Demo Readiness"
-      eyebrow="PRESENTATION"
+      eyebrow="Presentation"
       title="Demo readiness"
       arabic="جاهزية العرض التجريبي"
       actions={
@@ -72,7 +72,7 @@ export function DemoReadinessPage() {
         </div>
       }
     >
-      <section className="glass-panel rounded-[22px] p-5 text-sm">
+      <section className="glass-panel rounded-panel p-5 text-sm">
         <p>
           Every successful Gemini result is cached per checkpoint and language ({language === "ar" ? "Arabic" : "English"} now) and survives
           reloads and <b>Reset demo</b>. A cached result is still validated against your real answers before it is shown, and it is labelled
@@ -120,7 +120,7 @@ export function DemoReadinessPage() {
       </section>
 
       {!!calls.length && (
-        <section className="glass-panel overflow-x-auto rounded-[22px] p-5" aria-label="Gemini calls">
+        <section className="glass-panel overflow-x-auto rounded-panel p-5" aria-label="Gemini calls">
           <h2 className="text-sm font-bold">
             Gemini calls this session <span dir="rtl" className="font-normal">· طلبات Gemini في هذه الجلسة</span>
           </h2>
@@ -155,7 +155,7 @@ export function DemoReadinessPage() {
         </section>
       )}
 
-      <section className="glass-panel rounded-[22px] p-5" aria-label="Demo results">
+      <section className="glass-panel rounded-panel p-5" aria-label="Demo results">
         <h2 className="text-sm font-bold">
           Demo results <span dir="rtl" className="font-normal">· نتائج العرض</span> ·{" "}
           {steps.filter((s) => isCached(s, language)).length} / {steps.length} cached

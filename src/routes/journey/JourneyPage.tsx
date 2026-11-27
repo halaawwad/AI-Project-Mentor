@@ -28,8 +28,8 @@ export function JourneyPage() {
   if (!journey.project || !journey.level || !stages.length) {
     const step = !journey.project ? "idea" : !journey.parts.length ? "parts" : "level";
     return (
-      <JourneyLayout step={step} eyebrow="LEARNING JOURNEY" title="Start your journey" arabic="ابدأ رحلتك" actions={<ResetDemoButton />}>
-        <section className="glass-panel rounded-[22px] p-6 text-sm">
+      <JourneyLayout step={step} eyebrow="Learning journey" title="Start your journey" arabic="ابدأ رحلتك" actions={<ResetDemoButton />}>
+        <section className="glass-panel rounded-panel p-6 text-sm">
           <p>
             {!journey.project || !journey.parts.length
               ? "Pick how you want to start. Your learning path is built after the parts list and a quick level check."
@@ -65,7 +65,7 @@ export function JourneyPage() {
   return (
     <JourneyLayout
       step={done ? "ready" : "path"}
-      eyebrow={`LEARNING PATH · ${levelInfo[journey.level].title.en.toUpperCase()}`}
+      eyebrow={`Learning path · ${levelInfo[journey.level].title.en}`}
       title={journey.project.title.en}
       arabic={journey.project.title.ar}
       actions={
@@ -78,7 +78,7 @@ export function JourneyPage() {
       <MentorAnalysisPanel mentor={mentor} language={lang} />
       <WhatChanged mentor={mentor} stages={stages} />
       <SkillsPanel profile={journey.profile} stages={stages} language={lang} />
-      <section className="glass-panel rounded-[22px] p-5">
+      <section className="glass-panel rounded-panel p-5">
         {lang === "ar" ? (
           <p dir="rtl" className="text-sm">
             {stages.length} مراحل · اجتز اختبار كل مرحلة بنسبة {PASS_MARK}% أو أكثر لفتح المرحلة التالية.{" "}
@@ -131,8 +131,8 @@ export function JourneyPage() {
               >
                 <Icon size={20} className={status === "passed" ? "text-success" : status === "current" ? "text-primary" : "text-muted-foreground"} />
                 <div className="min-w-[12rem] flex-1">
-                  <p className="flex flex-wrap items-center gap-1.5 text-[10px] font-semibold tracking-[0.14em] text-muted-foreground">
-                    STAGE {i + 1} · {status.toUpperCase()} <ActionBadge action={status === "passed" ? "keep" : item.action} />
+                  <p className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                    Stage {i + 1} · {status} <ActionBadge action={status === "passed" ? "keep" : item.action} />
                   </p>
                   <strong dir={lang === "ar" ? "rtl" : "ltr"} className="text-sm">
                     {stage.title[lang]}

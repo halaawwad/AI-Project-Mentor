@@ -266,7 +266,7 @@ export function CatalogPage() {
                 <span>{items.length} components</span>
               </div>
               <div className="grid gap-4 xl:grid-cols-[190px_1fr]">
-                <aside className="glass-panel catalog-filter-panel h-fit rounded-[18px] p-4 xl:sticky xl:top-4">
+                <aside className="glass-panel catalog-filter-panel h-fit rounded-panel p-4 xl:sticky xl:top-4">
                   <h2 className="mb-4 flex items-center gap-2 text-xs font-bold">
                     <Filter size={15} />
                     Filter Components
@@ -346,7 +346,7 @@ export function CatalogPage() {
                       <article
                         key={item.key}
                         data-category-tone={catalogCategories.indexOf(item.category)}
-                        className="glass-panel catalog-card catalog-library-card flex min-w-0 flex-col rounded-[22px] p-4"
+                        className="glass-panel catalog-card catalog-library-card flex min-w-0 flex-col rounded-panel p-4"
                       >
                         <button
                           aria-label={`Show ${item.name} on workbench`}
