@@ -1,6 +1,7 @@
 import { CATALOG_MAP } from "./lab/catalog";
 import {
   customPartDefinition,
+  readCustomParts,
   type CustomPartSpec,
   type SavedCustomPart,
 } from "./lab/customParts";
@@ -120,6 +121,46 @@ export const customCatalogComponent = (part: SavedCustomPart): CatalogComponent 
     spec: part.spec,
   };
 };
+
+const normalizeCatalogText = (value: string) =>
+  value.toLowerCase().normalize("NFKC").replace(/[أإآ]/g, "ا");
+const normalizeCatalogAlias = (value: string) =>
+  normalizeCatalogText(value).replace(/[\s_\-–.·]+/g, "");
+
+/** Search text matching is shared by the library and the no-results action. */
+export function catalogSearchMatches(item: CatalogComponent, query: string) {
+  const normalized = normalizeCatalogText(query.trim());
+  return (
+    !normalized ||
+    normalizeCatalogText(`${item.name} ${item.arabic} ${item.key} ${item.model}`).includes(normalized)
+  );
+}
+
+export const catalogSearchCanOfferGeneration = (query: string) => Boolean(query.trim());
+
+const catalogAliases: Record<string, string> = {
+  ultrasonicsensor: "hc_sr04",
+  ultrasonicdistancesensor: "hc_sr04",
+};
+
+/** Exact name/alias lookup; custom names remain user-owned and are never fuzzy-matched. */
+export function findCatalogItemByName(name: string) {
+  const normalized = normalizeCatalogAlias(name.trim());
+  if (!normalized) return null;
+  const aliasKey = catalogAliases[normalized];
+  if (aliasKey) return componentCatalog.find((item) => item.key === aliasKey) ?? null;
+  const known = componentCatalog.find((item) =>
+    [item.name, item.arabic, item.key, item.model].some(
+      (value) => normalizeCatalogAlias(value) === normalized,
+    ),
+  );
+  if (known) return known;
+  const custom = readCustomParts().find(
+    (part) => normalizeCatalogAlias(part.name) === normalized || normalizeCatalogAlias(part.id) === normalized,
+  );
+  return custom ? customCatalogComponent(custom) : null;
+}
+
 /** English labels for `catalogCategories`, in the same order (from LabAssist catalog-preview). */
 export const catalogCategoryLabels = [
   "Control Boards",
@@ -135,7 +176,19 @@ export const categoryLabel = (name: string) =>
   catalogCategoryLabels[catalogCategories.indexOf(name)] || name;
 export type BomEntry = { key: string; quantity: number };
 /** Exact catalog-key lookup; keys are never normalised or guessed. */
-export const catalogByKey = new Map(componentCatalog.map((item) => [item.key, item]));
+class CatalogByKey extends Map<string, CatalogComponent> {
+  override get(key: string) {
+    const known = super.get(key);
+    if (known) return known;
+    const custom = readCustomParts().find((part) => part.id === key);
+    return custom ? customCatalogComponent(custom) : undefined;
+  }
+
+  override has(key: string) {
+    return super.has(key) || readCustomParts().some((part) => part.id === key);
+  }
+}
+export const catalogByKey = new CatalogByKey(componentCatalog.map((item) => [item.key, item]));
 const BOM_KEY = STORAGE_KEYS.bom;
 const MAX_QUANTITY = 999;
 /**
@@ -160,6 +213,7 @@ function writeBom(entries: BomEntry[]) {
   return entries;
 }
 export function addToBom(key: string) {
+  if (!catalogByKey.has(key)) throw new Error("Unknown catalog part.");
   const entries = readBom();
   const entry = entries.find((item) => item.key === key);
   if (entry) entry.quantity = Math.min(MAX_QUANTITY, entry.quantity + 1);

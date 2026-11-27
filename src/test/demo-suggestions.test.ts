@@ -28,6 +28,7 @@ describe("demo suggestion engine", () => {
 
   it("returns no parts for unrelated text", () => {
     expect(suggestPartsDemo("hello there").parts).toEqual([]);
+    expect(suggestPartsDemo("hello there")).not.toHaveProperty("missingParts");
   });
 
   it("detects the description language", () => {

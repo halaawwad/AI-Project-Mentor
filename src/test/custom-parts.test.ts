@@ -2,6 +2,16 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { removeLocal, STORAGE_KEYS } from "@/lib/storage";
 import { CATALOG_MAP, pinLocal } from "@/lib/lab/catalog";
 import {
+  addManyToBom,
+  catalogByKey,
+  catalogSearchCanOfferGeneration,
+  catalogSearchMatches,
+  componentCatalog,
+  customCatalogComponent,
+  findCatalogItemByName,
+  readBom,
+} from "@/lib/componentCatalog";
+import {
   customPartDefinition,
   customPartId,
   deleteCustomPart,
@@ -11,6 +21,9 @@ import {
   validateCustomPartSpec,
   type CustomPartSpec,
 } from "@/lib/lab/customParts";
+import { validateAiSuggestions } from "@/lib/suggest/validate";
+import { missingPartsApprovalReminder } from "@/lib/suggest/review";
+import { catalogMatchFromLookup } from "@/lib/journey/componentAi";
 import { validate } from "@/lib/lab/validate";
 import { checkWireFit } from "@/lib/lab/wireCompatibility";
 import type { CircuitData } from "@/lib/lab/types";
@@ -28,6 +41,7 @@ const spec = (pins: unknown[] = [
 
 beforeEach(() => {
   removeLocal(STORAGE_KEYS.customParts);
+  removeLocal(STORAGE_KEYS.bom);
   reloadCustomParts();
 });
 
@@ -158,5 +172,108 @@ describe("custom part storage, model pins and wiring", () => {
     expect(validate(invalid).issues).toEqual(
       expect.arrayContaining([expect.objectContaining({ type: "Wrong Pin Type" })]),
     );
+  });
+
+  it("maps missing-part names to saved custom, exact catalog, and known catalog aliases", () => {
+    const saved = saveCustomPart("Saved display", spec());
+    const checked = validateAiSuggestions(
+      {
+        language: "en",
+        summary: "A timer with a controller, display, and audible alert.",
+        parts: [
+          { key: "arduino_uno", quantity: 1, role: "Controller", reason: "Runs the timer." },
+        ],
+        missingParts: [
+          { name: "TM1637 4-digit display", quantity: 1, role: "Display", reason: "Shows the countdown." },
+          { name: "Saved display", quantity: 2, role: "Display", reason: "Already saved locally." },
+          { name: "Arduino Uno", quantity: 1, role: "Controller", reason: "Already in the catalog." },
+          { name: "ultrasonic sensor", quantity: 1, role: "Range", reason: "Measures distance." },
+          { name: "kicad.org", quantity: 1, role: "Library", reason: "A link must not be suggested." },
+        ],
+      },
+      "A digital countdown timer",
+    );
+    expect(checked?.missingParts).toEqual([
+      expect.objectContaining({ name: "TM1637 4-digit display", quantity: 1 }),
+    ]);
+    expect(checked?.parts.map((part) => [part.key, part.quantity])).toEqual([
+      ["arduino_uno", 2],
+      [saved.id, 2],
+      ["hc_sr04", 1],
+    ]);
+    expect(checked?.dropped).toBe(1);
+    const cachedAgain = validateAiSuggestions(checked?.cacheValue, "A digital countdown timer");
+    expect(cachedAgain?.parts.map((part) => [part.key, part.quantity])).toEqual([
+      ["arduino_uno", 2],
+      [saved.id, 2],
+      ["hc_sr04", 1],
+    ]);
+    expect(cachedAgain?.missingParts.map((part) => part.name)).toEqual([
+      "TM1637 4-digit display",
+    ]);
+  });
+
+  it("resolves Gemini's canonical part name to the existing catalog item", () => {
+    expect(findCatalogItemByName("HC-SR04")?.key).toBe("hc_sr04");
+    const saved = saveCustomPart("Saved sensor", spec());
+    expect(
+      catalogMatchFromLookup({
+        kind: "ai",
+        info: {
+          name: "HC-SR04",
+          whatItIs: "A common ultrasonic distance sensor module.",
+          typicalPins: [{ name: "TRIG", function: "Trigger input" }],
+          voltage: "5 V",
+          typicalUse: "It measures distance using reflected sound waves.",
+          projectFit: "It can measure distance for this project.",
+          safetyNotes: ["Check the module's voltage before wiring."],
+        },
+      }),
+    ).toMatchObject({ key: "hc_sr04" });
+    expect(
+      catalogMatchFromLookup({
+        kind: "ai",
+        info: {
+          name: saved.name,
+          whatItIs: "A locally saved sensor module for student projects.",
+          typicalPins: [{ name: "TRIG", function: "Trigger input" }],
+          voltage: "5 V",
+          typicalUse: "It senses a physical condition for a project.",
+          projectFit: "It can provide a sensor reading for this project.",
+          safetyNotes: ["Check the saved part's voltage before wiring."],
+        },
+      }),
+    ).toMatchObject({ key: saved.id });
+  });
+
+  it("offers the search action for non-empty searches even when results already exist", () => {
+    const saved = saveCustomPart("TM1637 4-digit display", spec());
+    const allItems = [...componentCatalog, customCatalogComponent(saved)];
+    expect(catalogSearchMatches(allItems.at(-1)!, "TM1637")).toBe(true);
+    expect(catalogSearchMatches(componentCatalog[0]!, "اردوينو")).toBe(true);
+    expect(catalogSearchCanOfferGeneration("Arduino")).toBe(true);
+    expect(catalogSearchCanOfferGeneration("  ")).toBe(false);
+  });
+
+  it("reminds the student when a missing suggestion is not generated, mapped, or skipped", () => {
+    const missing = [
+      { name: "TM1637 display", quantity: 1, role: "Display", reason: "Shows the timer." },
+    ];
+    expect(missingPartsApprovalReminder(missing, [])).toContain("Generate or skip");
+    expect(missingPartsApprovalReminder(missing, ["TM1637 display"])).toBeNull();
+  });
+
+  it("approves a reviewed list containing a generated custom part into the BOM", () => {
+    const saved = saveCustomPart("TM1637 4-digit display", spec());
+    const approved = addManyToBom([
+      { key: "arduino_uno", quantity: 1 },
+      { key: saved.id, quantity: 3 },
+    ]);
+    expect(approved).toEqual([
+      { key: "arduino_uno", quantity: 1 },
+      { key: saved.id, quantity: 3 },
+    ]);
+    expect(readBom()).toEqual(approved);
+    expect(catalogByKey.get(saved.id)?.custom).toBe(true);
   });
 });

@@ -136,6 +136,11 @@ export function BomPage() {
                               <span dir="rtl" className="block text-xs text-muted-foreground">
                                 {item.arabic}
                               </span>
+                              {item.custom && (
+                                <span className="mt-1 inline-flex rounded-full bg-soft-amber px-2 py-0.5 text-[9px] font-semibold">
+                                  AI-generated part — verify with the datasheet
+                                </span>
+                              )}
                               <span className="block font-mono text-[9px] text-muted-foreground">
                                 {item.key}
                               </span>
@@ -144,7 +149,9 @@ export function BomPage() {
                         </td>
                         <td className="p-2 text-xs">{categoryLabel(item.category)}</td>
                         <td className="p-2 text-xs">
-                          {item.voltage ? `${item.voltage} V` : "Circuit-dependent"}
+                          {item.custom && item.spec
+                            ? `${item.spec.operatingVoltage.min}–${item.spec.operatingVoltage.max} V`
+                            : item.voltage ? `${item.voltage} V` : "Circuit-dependent"}
                         </td>
                         <td className="p-2">
                           <div className="inline-flex items-center gap-1">

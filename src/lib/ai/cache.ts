@@ -8,8 +8,8 @@ import { isRecord, type Language } from "./shared";
  * for the learner (`LEARNER_ID`). It is separate from the journeys, so it survives reloads and "Reset demo"; only
  * "Clear AI cache" removes it. Each feature validates a cached value again before using it.
  */
-export type AiFeature = "level" | "mentor" | "lesson" | "quiz" | "feedback" | "wiring" | "component";
-export const AI_FEATURES: AiFeature[] = ["level", "mentor", "lesson", "quiz", "feedback", "wiring", "component"];
+export type AiFeature = "level" | "mentor" | "lesson" | "quiz" | "feedback" | "wiring" | "component" | "suggestions";
+export const AI_FEATURES: AiFeature[] = ["level", "mentor", "lesson", "quiz", "feedback", "wiring", "component", "suggestions"];
 
 export interface AiCacheEntry {
   feature: AiFeature;

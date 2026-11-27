@@ -73,6 +73,19 @@ export const exampleProjects: ExampleProject[] = [
       { key: "resistor_220", quantity: 1, role: "تحدّ من تيار صمام LED.", reason: "بدونها قد يتلف الصمام أو منفذ وحدة التحكم." },
     ],
   },
+  {
+    id: "countdown-timer",
+    title: { en: "Digital countdown timer", ar: "مؤقت رقمي للعد التنازلي" },
+    language: "en",
+    description:
+      "A digital countdown timer controlled by an Arduino, showing the remaining seconds on a TM1637 4-digit display and sounding a buzzer at zero.",
+    summary:
+      "An Arduino handles the countdown, a buzzer signals when time is up, and the TM1637 display shows the remaining seconds.",
+    parts: [
+      { key: "arduino_uno", quantity: 1, role: "Runs the countdown.", reason: "Coordinates the display and end-of-timer alert." },
+      { key: "buzzer_active", quantity: 1, role: "Signals when the countdown reaches zero.", reason: "The project asks for an audible alert." },
+    ],
+  },
 ];
 
 /** Matches a description to an example when the text is the example's, ignoring spacing. */

@@ -17,6 +17,7 @@ import { AppSidebar } from "@/components/AppSidebar";
 import { CatalogCategoryShowcase } from "@/components/CatalogCategoryShowcase";
 import { ComponentConnectionSheet } from "@/components/ComponentConnectionSheet";
 import { ComponentPreview } from "@/components/ComponentPreview";
+import { CustomPartGenerator } from "@/components/CustomPartGenerator";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -33,11 +34,15 @@ import {
   componentCatalog,
   catalogCategories,
   categoryLabel,
+  catalogSearchMatches,
+  catalogSearchCanOfferGeneration,
   customCatalogComponent,
+  findCatalogItemByName,
   type CatalogComponent,
   type BomEntry,
 } from "@/lib/componentCatalog";
 import { deleteCustomPart, useCustomParts } from "@/lib/lab/customParts";
+import { detectLanguage } from "@/lib/suggest/language";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 /**
@@ -58,6 +63,7 @@ export function CatalogPage() {
     [query, setQuery] = useState(""),
     [category, setCategory] = useState("All"),
     [voltage, setVoltage] = useState("All");
+  const [generateName, setGenerateName] = useState("");
 
   const [spotlightKey, setSpotlightKey] = useState<string | null>(null);
   const [libraryOpen, setLibraryOpen] = useState(false);
@@ -100,19 +106,17 @@ export function CatalogPage() {
     setSelected(null);
     if (search.part) void navigate({ to: "/catalog", search: {}, replace: true });
   };
-  const normalized = query.trim().toLowerCase().normalize("NFKC").replace(/[أإآ]/g, "ا");
+  const canOfferGeneration = catalogSearchCanOfferGeneration(query);
+  const queryMatchesLibrary =
+    allItems.some((item) => catalogSearchMatches(item, query)) ||
+    Boolean(findCatalogItemByName(query));
   const items = allItems.filter(
     (item) =>
       (category === "All" || item.category === category) &&
       (voltage === "All" || item.voltage === Number(voltage)) &&
-      `${item.name} ${item.arabic} ${item.key} ${item.model}`
-        .toLowerCase()
-        .normalize("NFKC")
-        .replace(/[أإآ]/g, "ا")
-        .includes(normalized),
+      catalogSearchMatches(item, query),
   );
   const add = (item: CatalogComponent) => {
-    if (item.custom) return;
     try {
       setBom(addToBom(item.key));
       setNotice(`${item.name} added to BOM`);
@@ -275,11 +279,20 @@ export function CatalogPage() {
                 <input
                   aria-label="Search components"
                   value={query}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setGenerateName("");
+                  }}
                   placeholder="Find a part · English / عربي"
                 />
                 {query && (
-                  <button aria-label="Clear search" onClick={() => setQuery("")}>
+                  <button
+                    aria-label="Clear search"
+                    onClick={() => {
+                      setQuery("");
+                      setGenerateName("");
+                    }}
+                  >
                     <X size={16} />
                   </button>
                 )}
@@ -341,6 +354,7 @@ export function CatalogPage() {
                       setCategory("All");
                       setVoltage("All");
                       setQuery("");
+                      setGenerateName("");
                     }}
                   >
                     Clear Filters
@@ -426,10 +440,14 @@ export function CatalogPage() {
                             View specifications <span aria-hidden="true">→</span>
                           </button>
                           {item.custom ? (
-                            <div className="grid grid-cols-2 gap-2">
+                            <div className="grid grid-cols-3 gap-2">
+                              <Button size="sm" variant="secondary" className="px-1.5 text-[10px]" onClick={() => add(item)}>
+                                <Package size={13} />
+                                Add to BOM
+                              </Button>
                               <Button size="sm" className="px-1.5 text-[10px]" onClick={() => openLab(item)}>
                                 <Box size={13} />
-                                Add to 3D Lab
+                                Place in Lab
                               </Button>
                               <Button size="sm" variant="ghost" className="px-1.5 text-[10px]" onClick={() => removeCustom(item)}>
                                 <X size={13} />
@@ -480,11 +498,54 @@ export function CatalogPage() {
                           setQuery("");
                           setCategory("All");
                           setVoltage("All");
+                          setGenerateName("");
                         }}
                       >
                         Clear Filters
                       </Button>
                     </div>
+                  )}
+                  {canOfferGeneration && (
+                    <section
+                      className="mt-4 rounded-xl border border-dashed border-border px-4 py-3"
+                      aria-label="Generate a part with AI"
+                    >
+                      {!queryMatchesLibrary && !generateName && (
+                        <p className="mb-2 text-xs text-muted-foreground">
+                          This part isn't in our library yet — I can generate it for you with AI.
+                          <span dir="rtl" className="ms-1">
+                            هذه القطعة غير موجودة في مكتبتنا بعد — يمكنني توليدها لك
+                            بالذكاء الاصطناعي.
+                          </span>
+                        </p>
+                      )}
+                      <p className="text-xs text-muted-foreground">
+                        Not what you’re looking for? Generate “
+                        <b dir="auto">{query.trim()}</b>” with AI.
+                        <span dir="rtl" className="ms-1">
+                          لم تجد ما تبحث عنه؟ أنشئ «<b>{query.trim()}</b>» بالذكاء الاصطناعي.
+                        </span>
+                      </p>
+                      {!generateName && (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          className="mt-2"
+                          onClick={() => setGenerateName(query.trim())}
+                        >
+                          <Package size={14} /> Generate with AI
+                        </Button>
+                      )}
+                      {generateName && (
+                        <div className="mt-3">
+                          <CustomPartGenerator
+                            key={generateName}
+                            name={generateName}
+                            language={detectLanguage(generateName)}
+                          />
+                        </div>
+                      )}
+                    </section>
                   )}
                 </div>
               </div>

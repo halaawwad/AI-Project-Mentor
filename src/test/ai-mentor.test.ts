@@ -3,12 +3,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { aiCacheEntries, clearAiCache, getAiCache, reloadAiCache } from "../lib/ai/cache";
 import { DEMO_COMPONENT, DEMO_SCRIPT, demoCircuit, demoSteps, isCached, prepareDemo, scriptedAnswers } from "../lib/ai/demo";
 import { buildLocalQuiz, planNextQuiz, START_DIFFICULTY } from "../lib/journey/adaptive";
-import { catalogMatch, lookupComponent, type ComponentContext } from "../lib/journey/componentAi";
+import {
+  catalogMatch,
+  componentSchema,
+  lookupComponent,
+  type ComponentContext,
+} from "../lib/journey/componentAi";
 import { feedbackSignature, prepareFeedback, validateFeedback, type FeedbackContext } from "../lib/journey/feedbackAi";
 import { gradeQuiz, stageStatuses } from "../lib/journey/grading";
 import { assessLevel, validateLevelAssessment } from "../lib/journey/levelAi";
 import { cachedLesson, lessonContext, localLesson, prepareLesson, validateLesson, type StageLesson } from "../lib/journey/lessonAi";
 import { aiCallLogs, clearAiCallLogs } from "../lib/suggest/diagnostics";
+import { suggestionsCheckpoint } from "../lib/suggest";
+import { exampleProjects } from "../lib/suggest/examples";
 import { levelQuestions } from "../lib/journey/level";
 import { mentorCheckpoint, stageOrder } from "../lib/journey/mentor";
 import { validatePlan } from "../lib/journey/mentorAi";
@@ -116,6 +123,19 @@ function smartGemini() {
       return response({
         notes: indexes.map((index) => ({ index, explanation: "هذا السلك يربط طرف تغذية بطرف إشارة.", fix: "انقل السلك من 5V إلى المكان الصحيح." })),
         summary: "في الدائرة مشكلتان في التوصيل.",
+      });
+    }
+    if (system.includes("You help students plan electronics projects")) {
+      return response({
+        language: "en",
+        summary: "An Arduino runs the timer, sounds a buzzer and uses a display for the countdown.",
+        parts: [
+          { key: "arduino_uno", quantity: 1, role: "Runs the timer.", reason: "Coordinates the countdown." },
+          { key: "buzzer_active", quantity: 1, role: "Signals when time is up.", reason: "The project requests an audible alert." },
+        ],
+        missingParts: [
+          { name: "TM1637 4-digit display", quantity: 1, role: "Shows remaining seconds.", reason: "A four-digit countdown display is needed." },
+        ],
       });
     }
     if (system.includes("You describe an electronics part")) return response(componentBody());
@@ -434,6 +454,8 @@ describe("AI new component information", () => {
     ]);
     await lookupComponent({ learnerId: "a", ctx: { ...ctx, name: "  tm1637 4-digit   DISPLAY " }, config, client });
     expect(spy).toHaveBeenCalledTimes(1);
+    expect(params(spy).config?.responseJsonSchema).toEqual(componentSchema);
+    expect(componentSchema.properties.partSpec.properties.pins.maxItems).toBe(40);
     expect(systemOf(params(spy))).toContain("Never give links");
   });
   it("shows catalog parts from local data without a request", async () => {
@@ -473,18 +495,18 @@ describe("AI new component information", () => {
 });
 
 describe("demo cache and Demo readiness", () => {
-  it("lists the 11 demo results and prepares the missing ones one request at a time", async () => {
+  it("lists the 12 demo results and prepares the missing ones one request at a time", async () => {
     const steps = demoSteps("ar");
-    expect(steps).toHaveLength(11);
+    expect(steps).toHaveLength(12);
     expect(steps.every((s) => !isCached(s, "ar"))).toBe(true);
     const { client, spy } = smartGemini();
     const sleep = vi.fn(async () => {});
     const progress: string[] = [];
     const result = await prepareDemo({ language: "ar", config, client, sleep, pauseMs: 1, onProgress: (p) => progress.push(`${p.step.feature}:${p.status}`) });
-    expect(result).toEqual({ requests: 11, stopped: null });
-    expect(spy).toHaveBeenCalledTimes(11);
-    expect(sleep).toHaveBeenCalledTimes(10);
-    expect(progress.filter((p) => p.endsWith(":requesting"))).toHaveLength(11);
+    expect(result).toEqual({ requests: 12, stopped: null });
+    expect(spy).toHaveBeenCalledTimes(12);
+    expect(sleep).toHaveBeenCalledTimes(11);
+    expect(progress.filter((p) => p.endsWith(":requesting"))).toHaveLength(12);
     // Every entry belongs to the single learner.
     expect(new Set(aiCacheEntries().map((e) => e.learner))).toEqual(new Set([LEARNER_ID]));
     expect(progress.filter((p) => !p.endsWith(":requesting")).every((p) => p.endsWith(":prepared"))).toBe(true);
@@ -493,6 +515,12 @@ describe("demo cache and Demo readiness", () => {
     expect(
       getAiCache(LEARNER_ID, "component", componentStep.checkpoint, "ar")?.value,
     ).toMatchObject({ partSpec: { category: "Displays & LEDs", pins: expect.any(Array) } });
+    const timerProject = exampleProjects.find((example) => example.id === "countdown-timer")!;
+    const suggestionsStep = demoSteps("ar").find((step) => step.feature === "suggestions")!;
+    expect(suggestionsStep.checkpoint).toBe(suggestionsCheckpoint(timerProject.description));
+    expect(getAiCache(LEARNER_ID, "suggestions", suggestionsStep.checkpoint, "en")?.value).toMatchObject({
+      missingParts: [expect.objectContaining({ name: "TM1637 4-digit display" })],
+    });
     // A second run sends nothing.
     const again = await prepareDemo({ language: "ar", config, client: failing().client, sleep });
     expect(again).toEqual({ requests: 0, stopped: null });
@@ -501,7 +529,7 @@ describe("demo cache and Demo readiness", () => {
   it("survives a reload and Reset demo, and only Clear AI cache removes it", async () => {
     await prepareDemo({ language: "ar", config, client: smartGemini().client, sleep: async () => {} });
     const count = aiCacheEntries().length;
-    expect(count).toBe(11);
+    expect(count).toBe(12);
     resetDemo();
     reloadAiCache();
     expect(aiCacheEntries()).toHaveLength(count);

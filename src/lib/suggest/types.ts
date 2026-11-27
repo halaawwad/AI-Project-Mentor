@@ -10,6 +10,14 @@ export interface PartSuggestion {
   reason: string;
 }
 
+/** A required part not represented by the real catalog; saved-part matches are mapped to `parts`. */
+export interface MissingPartSuggestion {
+  name: string;
+  quantity: number;
+  role: string;
+  reason: string;
+}
+
 /** `ai`: validated Gemini output. `demo`: the local example/keyword engine. */
 export type SuggestionSource = "ai" | "demo";
 
@@ -34,6 +42,7 @@ export interface SuggestionResult {
   language: SuggestionLanguage;
   summary: string;
   parts: PartSuggestion[];
+  missingParts?: MissingPartSuggestion[];
   /** Set when `source` is `demo` because the AI could not be used. */
   fallbackReason?: FallbackReason;
   /** AI items removed during validation (unknown keys, invalid quantities, malformed items). */

@@ -12,18 +12,13 @@ import {
 } from "@/lib/ai/shared";
 import {
   catalogByKey,
-  componentCatalog,
-  customCatalogComponent,
+  findCatalogItemByName,
   type CatalogComponent,
 } from "@/lib/componentCatalog";
 import type { AiClient } from "@/lib/suggest/aiEngine";
 import type { AiConfig } from "@/lib/suggest/config";
 import type { FallbackReason } from "@/lib/suggest/types";
-import {
-  readCustomParts,
-  validateCustomPartSpec,
-  type CustomPartSpec,
-} from "@/lib/lab/customParts";
+import { validateCustomPartSpec, type CustomPartSpec } from "@/lib/lab/customParts";
 import type { Language } from "./types";
 
 export interface ComponentInfo {
@@ -45,6 +40,11 @@ export type ComponentLookup =
   | { kind: "none"; fallbackReason: FallbackReason }
   | { kind: "invalid-name" };
 
+export function catalogMatchFromLookup(result: ComponentLookup): CatalogComponent | null {
+  if (result.kind === "catalog") return result.item;
+  return result.kind === "ai" ? catalogMatch(result.info.name) : null;
+}
+
 export interface ComponentContext {
   name: string;
   language: Language;
@@ -59,15 +59,7 @@ export const componentCheckpoint = (name: string) => `component:${normalize(clea
 
 /** Exact catalog match by name, key or lab model id (no fuzzy guessing). */
 export const catalogMatch = (name: string) => {
-  const n = normalize(cleanPartName(name));
-  const known = componentCatalog.find((item) =>
-    [item.name, item.key, item.model].some((v) => normalize(v) === n),
-  );
-  if (known) return known;
-  const custom = readCustomParts().find((part) =>
-    [part.name, part.id].some((value) => normalize(value) === n),
-  );
-  return custom ? customCatalogComponent(custom) : null;
+  return findCatalogItemByName(cleanPartName(name));
 };
 
 export const buildComponentSystemPrompt = (language: Language) => `You describe an electronics part for a student in AiPM (AI Project Mentor) who wants to use it in their project.
@@ -130,7 +122,7 @@ export const componentSchema = {
         pins: {
           type: "array",
           minItems: 0,
-          maxItems: 64,
+          maxItems: 40,
           items: {
             type: "object",
             properties: {

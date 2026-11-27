@@ -6,6 +6,7 @@ import type { AiConfig } from "../lib/suggest/config";
 import { exampleProjects } from "../lib/suggest/examples";
 import { validateAiSuggestions } from "../lib/suggest/validate";
 import { componentCatalog } from "../lib/componentCatalog";
+import { clearAiCache } from "../lib/ai/cache";
 
 const config: AiConfig = { apiKey: "test-key", model: "gemini-3.5-flash", timeoutMs: 5_000 };
 const noKey: AiConfig = { ...config, apiKey: "" };
@@ -48,6 +49,9 @@ describe("AI suggestions (Gemini)", () => {
         { key: "hc_sr04", quantity: 1, role: "Distance sensor", reason: "Detects obstacles." },
         { key: "dc_motor", quantity: 2, role: "Wheel motors", reason: "Move the car." },
       ],
+      missingParts: [
+        { name: "TM1637 4-digit display", quantity: 1, role: "Shows the timer.", reason: "A four-digit display is required." },
+      ],
     });
     const result = await suggestParts(description, { config, client });
     expect(result.source).toBe("ai");
@@ -59,6 +63,9 @@ describe("AI suggestions (Gemini)", () => {
       ["dc_motor", 2],
     ]);
     expect(result.droppedCount).toBe(0);
+    expect(result.missingParts).toEqual([
+      expect.objectContaining({ name: "TM1637 4-digit display", quantity: 1 }),
+    ]);
 
     expect(spy).toHaveBeenCalledTimes(1);
     const [params] = spy.mock.calls[0]!;
@@ -70,6 +77,10 @@ describe("AI suggestions (Gemini)", () => {
     const system = String(params.config?.systemInstruction);
     for (const item of componentCatalog) expect(system).toContain(item.key);
     expect(JSON.stringify(params)).not.toContain("test-key");
+    const cached = await suggestParts(description, { config: noKey, client });
+    expect(cached.source).toBe("ai");
+    expect(cached.missingParts).toEqual(result.missingParts);
+    expect(spy).toHaveBeenCalledTimes(1);
   });
 
   it("removes unknown catalog keys and invalid quantities, and merges duplicates", async () => {
@@ -222,10 +233,12 @@ describe("AI suggestions (Gemini)", () => {
     expect(ai.source).toBe("ai");
     expect(ai.language).toBe("ar");
 
+    clearAiCache();
     const local = await suggestParts(example.description, { config: noKey });
     expect(local.source).toBe("demo");
     expect(local.parts).toEqual(example.parts);
     expect(local.summary).toBe(example.summary);
+    expect(local.missingParts).toBeUndefined();
   });
 });
 
@@ -235,6 +248,8 @@ describe("AI request contract", () => {
     expect(schema.properties.parts.items.properties.key.enum).toEqual(
       componentCatalog.map((item) => item.key),
     );
+    expect(schema.properties.missingParts.maxItems).toBe(5);
+    expect(schema.required).not.toContain("missingParts");
     expect(buildSystemPrompt()).toContain("Use only keys from the catalog");
   });
 

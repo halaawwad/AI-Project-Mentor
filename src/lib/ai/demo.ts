@@ -14,8 +14,10 @@ import type { Bi, JourneyState, Language, Question, Stage } from "@/lib/journey/
 import { explainWiring, wiringCheckpoint } from "@/lib/lab/wiringAi";
 import type { CircuitData } from "@/lib/lab/types";
 import { validate } from "@/lib/lab/validate";
+import { suggestParts, suggestionsCheckpoint } from "@/lib/suggest";
 import type { AiClient } from "@/lib/suggest/aiEngine";
 import type { AiConfig } from "@/lib/suggest/config";
+import { exampleProjects } from "@/lib/suggest/examples";
 import type { FallbackReason } from "@/lib/suggest/types";
 import { getAiCache, type AiFeature } from "./cache";
 
@@ -85,7 +87,7 @@ function demoLevel(script: DemoScript, language: Language) {
   return valid?.level ?? scoreLevel(script.rating, script.levelAnswers).level;
 }
 
-/** Every AI result the scripted demo uses (11), in the order the demo reaches them. */
+/** Every AI result the scripted demo uses, in the order the demo reaches them. */
 export function demoSteps(language: Language, script: DemoScript = DEMO_SCRIPT): DemoStep[] {
   {
     const level = demoLevel(script, language);
@@ -97,6 +99,7 @@ export function demoSteps(language: Language, script: DemoScript = DEMO_SCRIPT):
       label: { en, ar },
     });
     const circuit = demoCircuit();
+    const suggestionProject = exampleProjects.find((example) => example.id === "countdown-timer")!;
     return [
       step("level", levelCheckpoint(script.rating, script.levelAnswers), "Level check", "تحديد المستوى"),
       step("mentor", "level", "Mentor analysis and plan after the level check", "تحليل المرشد والخطة بعد تحديد المستوى"),
@@ -113,12 +116,23 @@ export function demoSteps(language: Language, script: DemoScript = DEMO_SCRIPT):
         : []),
       step("wiring", wiringCheckpoint({ issues: validate(circuit).issues }), "Explain with mentor (5V → D2 in the 3D Lab)", "اشرح مع المرشد (5V ← D2 في 3D Lab)"),
       step("component", componentCheckpoint(DEMO_COMPONENT), `New component: ${DEMO_COMPONENT}`, `قطعة جديدة: ${DEMO_COMPONENT}`),
+      step(
+        "suggestions",
+        suggestionsCheckpoint(suggestionProject.description),
+        suggestionProject.title.en,
+        suggestionProject.title.ar,
+      ),
     ];
   }
 }
 
 export const isCached = (step: DemoStep, language: Language) =>
-  getAiCache(LEARNER_ID, step.feature, step.checkpoint, language) !== null;
+  getAiCache(
+    LEARNER_ID,
+    step.feature,
+    step.checkpoint,
+    step.feature === "suggestions" ? "en" : language,
+  ) !== null;
 
 export type DemoProgress =
   | { step: DemoStep; status: "requesting" | "cached" | "prepared" }
@@ -217,6 +231,12 @@ export async function prepareDemo({
       await run(at("component", componentCheckpoint(DEMO_COMPONENT)), () =>
         lookupComponent({ learnerId, ctx: { name: DEMO_COMPONENT, language, projectTitle: state.project!.title.en, projectParts: state.parts.map((p) => p.key) }, ...ai }),
         (r) => (r.kind === "none" ? r.fallbackReason : undefined));
+      const suggestionProject = exampleProjects.find((example) => example.id === "countdown-timer")!;
+      await run(
+        at("suggestions", suggestionsCheckpoint(suggestionProject.description)),
+        () => suggestParts(suggestionProject.description, ai),
+        (r) => r.fallbackReason,
+      );
     }
   } catch (error) {
     if (error instanceof DemoStop) return { requests, stopped: error.reason };

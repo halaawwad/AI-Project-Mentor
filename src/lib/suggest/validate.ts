@@ -1,6 +1,14 @@
-import { catalogByKey } from "@/lib/componentCatalog";
+import {
+  componentCatalog,
+  findCatalogItemByName,
+} from "@/lib/componentCatalog";
 import { detectLanguage } from "./language";
-import { MAX_SUGGESTED_QUANTITY, type PartSuggestion, type SuggestionLanguage } from "./types";
+import {
+  MAX_SUGGESTED_QUANTITY,
+  type MissingPartSuggestion,
+  type PartSuggestion,
+  type SuggestionLanguage,
+} from "./types";
 
 const MAX_TEXT = 300;
 const MAX_SUMMARY = 800;
@@ -35,10 +43,37 @@ export function mergeSuggestions(items: PartSuggestion[]): PartSuggestion[] {
   return [...merged.values()];
 }
 
+function mergeMissingParts(items: MissingPartSuggestion[]) {
+  const merged = new Map<string, MissingPartSuggestion>();
+  for (const item of items) {
+    const key = item.name.toLowerCase().normalize("NFKC").replace(/[أإآ]/g, "ا").replace(/\s+/g, " ");
+    const existing = merged.get(key);
+    if (!existing) {
+      merged.set(key, { ...item });
+      continue;
+    }
+    existing.quantity = Math.min(MAX_SUGGESTED_QUANTITY, existing.quantity + item.quantity);
+    if (!existing.role.includes(item.role)) existing.role = `${existing.role} · ${item.role}`;
+    if (!existing.reason.includes(item.reason)) existing.reason = `${existing.reason} ${item.reason}`;
+  }
+  return [...merged.values()];
+}
+
+const containsLink = (text: string) =>
+  /https?:\/\/|www\.|\.pdf\b|\b[a-z0-9-]+\.(?:com|net|org|io|edu|gov|co|dev|app)\b/i.test(text);
+
 export interface ValidatedSuggestions {
   language: SuggestionLanguage;
   summary: string;
   parts: PartSuggestion[];
+  missingParts: MissingPartSuggestion[];
+  /** Revalidation input retaining names that may map to custom parts on a later read. */
+  cacheValue: {
+    language: SuggestionLanguage;
+    summary: string;
+    parts: PartSuggestion[];
+    missingParts: MissingPartSuggestion[];
+  };
   /** Items removed: unknown keys, invalid quantities or malformed entries. */
   dropped: number;
 }
@@ -62,6 +97,7 @@ export function validateAiSuggestions(
       : detectLanguage(description);
   let dropped = 0;
   const valid: PartSuggestion[] = [];
+  const direct: PartSuggestion[] = [];
   for (const entry of list) {
     if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
       dropped++;
@@ -73,7 +109,7 @@ export function validateAiSuggestions(
     const reason = clean(item["reason"], MAX_TEXT);
     if (
       typeof key !== "string" ||
-      !catalogByKey.has(key) ||
+      !componentCatalog.some((catalogItem) => catalogItem.key === key) ||
       !isValidQuantity(item["quantity"]) ||
       !role ||
       !reason
@@ -81,12 +117,63 @@ export function validateAiSuggestions(
       dropped++;
       continue;
     }
-    valid.push({ key, quantity: item["quantity"], role, reason });
+    const suggestion = { key, quantity: item["quantity"], role, reason };
+    valid.push(suggestion);
+    direct.push(suggestion);
   }
+  const missing: MissingPartSuggestion[] = [];
+  const cacheMissing: MissingPartSuggestion[] = [];
+  const rawMissing = record["missingParts"];
+  if (rawMissing !== undefined) {
+    if (!Array.isArray(rawMissing)) dropped++;
+    else {
+      if (rawMissing.length > 5) dropped += rawMissing.length - 5;
+      for (const entry of rawMissing.slice(0, 5)) {
+        if (typeof entry !== "object" || entry === null || Array.isArray(entry)) {
+          dropped++;
+          continue;
+        }
+        const item = entry as Record<string, unknown>;
+        const name = clean(item["name"], 80);
+        const quantity = item["quantity"];
+        const role = clean(item["role"], MAX_TEXT);
+        const reason = clean(item["reason"], MAX_TEXT);
+        if (
+          typeof item["name"] !== "string" ||
+          item["name"].trim().length > 80 ||
+          name.length < 2 ||
+          !isValidQuantity(quantity) ||
+          !role ||
+          !reason ||
+          [name, role, reason].some(containsLink)
+        ) {
+          dropped++;
+          continue;
+        }
+        cacheMissing.push({ name, quantity, role, reason });
+        const matched = findCatalogItemByName(name);
+        if (matched) {
+          valid.push({ key: matched.key, quantity, role, reason });
+          continue;
+        }
+        missing.push({ name, quantity, role, reason });
+      }
+    }
+  }
+  const summary = clean(record["summary"], MAX_SUMMARY);
+  const cachedParts = mergeSuggestions(direct);
+  const cachedMissing = mergeMissingParts(cacheMissing);
   return {
     language,
-    summary: clean(record["summary"], MAX_SUMMARY),
+    summary,
     parts: mergeSuggestions(valid),
+    missingParts: mergeMissingParts(missing),
+    cacheValue: {
+      language,
+      summary,
+      parts: cachedParts,
+      missingParts: cachedMissing,
+    },
     dropped,
   };
 }
