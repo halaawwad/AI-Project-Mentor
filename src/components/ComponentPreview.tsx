@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CATALOG_MAP } from "@/lib/lab/catalog";
+import type { PartDef } from "@/lib/lab/catalog";
 import { buildModel } from "@/lib/lab/models";
 import { createCatalogDemo } from "@/lib/lab/catalogDemo";
 import {
@@ -18,17 +19,19 @@ export function ComponentPreview({
   model,
   showcase = false,
   demoCategory,
+  definition,
 }: {
   model: string;
   showcase?: boolean;
   demoCategory?: number;
+  definition?: PartDef;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const actions = useRef<{ zoom: (factor: number) => void; reset: () => void } | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     const element = host.current;
-    const def = CATALOG_MAP[model];
+    const def = definition ?? CATALOG_MAP[model];
     if (!element || !def) return;
     let renderer: THREE.WebGLRenderer | undefined;
     let controls: OrbitControls | undefined;
@@ -189,7 +192,7 @@ export function ComponentPreview({
       renderer?.forceContextLoss();
       renderer?.domElement.remove();
     };
-  }, [model, showcase, demoCategory]);
+  }, [model, showcase, demoCategory, definition]);
   return (
     <div className={`component-preview ${showcase ? "component-preview-showcase" : ""}`}>
       <div ref={host} className="component-preview-canvas" />

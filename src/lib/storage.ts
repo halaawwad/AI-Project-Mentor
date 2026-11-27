@@ -9,6 +9,7 @@ export const STORAGE_KEYS = {
   journey: "aipm.journey.v1",
   /** Validated Gemini results per learner, feature, checkpoint and language (kept by Reset demo). */
   aiCache: "aipm.ai.cache.v1",
+  customParts: "aipm.custom.parts.v1",
 } as const;
 
 export const storageEvent = "aipm-storage-result";

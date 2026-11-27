@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { readLocal, STORAGE_KEYS, writeLocal } from "../storage";
 import { CATALOG_MAP } from "./catalog";
+import { customPartsStorageReadable, readCustomParts } from "./customParts";
 import { uid, type Circuit, type CircuitData, type Project } from "./types";
 
 const KEY = STORAGE_KEYS.labProject;
@@ -112,6 +113,7 @@ const newCircuit = (name: string, data: CircuitData = { parts: [], wires: [] }):
 });
 
 function initial(): Project {
+  readCustomParts();
   const saved = readLocal<Project | null>(KEY, null, isProject);
   if (saved) return sanitizeProject(saved);
   const c = newCircuit("Blink LED Circuit", sample());
@@ -181,6 +183,7 @@ export function useProject() {
 
   /** Returns false when the browser refused the write; the circuit stays on screen. */
   const save = useCallback(() => {
+    if (!customPartsStorageReadable()) return false;
     try {
       writeLocal(KEY, project);
     } catch {
@@ -193,7 +196,7 @@ export function useProject() {
   // persist when save() is called via state – also keep latest for version ops.
   // Failures are reported by the global storage notice; unreadable saves are never overwritten.
   useEffect(() => {
-    if (dirty) return;
+    if (dirty || !customPartsStorageReadable()) return;
     try {
       writeLocal(KEY, project);
     } catch {

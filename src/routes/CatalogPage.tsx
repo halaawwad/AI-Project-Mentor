@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Zap,
   Box,
@@ -33,9 +33,11 @@ import {
   componentCatalog,
   catalogCategories,
   categoryLabel,
+  customCatalogComponent,
   type CatalogComponent,
   type BomEntry,
 } from "@/lib/componentCatalog";
+import { deleteCustomPart, useCustomParts } from "@/lib/lab/customParts";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
 /**
@@ -46,6 +48,11 @@ export function CatalogPage() {
   useDocumentTitle("Component Catalog | AiPM");
   const navigate = useNavigate();
   const search = useSearch({ from: "/catalog" });
+  const customParts = useCustomParts();
+  const allItems = useMemo(
+    () => [...componentCatalog, ...customParts.map(customCatalogComponent)],
+    [customParts],
+  );
   const previews = usePartPreviews();
   const [menu, setMenu] = useState(false),
     [query, setQuery] = useState(""),
@@ -82,19 +89,19 @@ export function CatalogPage() {
   // `?part=<catalog key>` opens that part's details (used by the BOM and home screens).
   useEffect(() => {
     if (!search.part) return;
-    const item = catalogByKey.get(search.part);
+    const item = allItems.find((entry) => entry.key === search.part) ?? catalogByKey.get(search.part);
     if (item) {
       setSelected(item);
       setCategory(item.category);
       setSpotlightKey(item.key);
     } else setNotice(`No catalog part matches "${search.part}".`);
-  }, [search.part]);
+  }, [search.part, allItems]);
   const closeDetails = () => {
     setSelected(null);
     if (search.part) void navigate({ to: "/catalog", search: {}, replace: true });
   };
   const normalized = query.trim().toLowerCase().normalize("NFKC").replace(/[أإآ]/g, "ا");
-  const items = componentCatalog.filter(
+  const items = allItems.filter(
     (item) =>
       (category === "All" || item.category === category) &&
       (voltage === "All" || item.voltage === Number(voltage)) &&
@@ -105,6 +112,7 @@ export function CatalogPage() {
         .includes(normalized),
   );
   const add = (item: CatalogComponent) => {
+    if (item.custom) return;
     try {
       setBom(addToBom(item.key));
       setNotice(`${item.name} added to BOM`);
@@ -114,6 +122,17 @@ export function CatalogPage() {
   };
   const openLab = (item: CatalogComponent) =>
     navigate({ to: "/lab", search: { add: item.model, request: Date.now().toString() } });
+  const removeCustom = (item: CatalogComponent) => {
+    if (!item.custom || !window.confirm(`Remove ${item.name} from My parts? Saved lab projects using it may no longer load.`))
+      return;
+    try {
+      deleteCustomPart(item.key);
+      setSelected(null);
+      setNotice(`${item.name} removed from My parts.`);
+    } catch {
+      setNotice("Could not remove this part. Check the local storage notice and try again.");
+    }
+  };
   const cardsRef = useRef<HTMLDivElement>(null);
   const resultKey = items.map((item) => item.key).join("|");
   useEffect(() => {
@@ -164,7 +183,7 @@ export function CatalogPage() {
       media.removeEventListener("change", reduced);
     };
   }, [resultKey, libraryOpen]);
-  const total = componentCatalog.length;
+  const total = allItems.length;
   return (
     <div className="dashboard-background catalog-background catalog-sheet-preview min-h-screen">
       <div className="mx-auto flex max-w-[1800px] gap-4 p-3 lg:p-4">
@@ -190,6 +209,7 @@ export function CatalogPage() {
               category={category}
               onCategory={setCategory}
               previews={previews}
+              totalParts={total}
               onDetails={setSelected}
               onAdd={add}
               onLab={openLab}
@@ -295,7 +315,7 @@ export function CatalogPage() {
                         <span className="catalog-category-dot" />
                         <span>{categoryLabel(name)}</span>
                         <strong>
-                          {componentCatalog.filter((item) => item.category === name).length}
+                          {allItems.filter((item) => item.category === name).length}
                         </strong>
                       </button>
                     ))}
@@ -376,10 +396,17 @@ export function CatalogPage() {
                           <p className="mt-1 font-mono text-[9px] text-muted-foreground">
                             {item.key}
                           </p>
+                          {item.custom && (
+                            <span className="mt-2 inline-flex w-fit rounded-full bg-soft-amber px-2 py-1 text-[10px] font-semibold">
+                              AI-generated part — verify with the datasheet
+                            </span>
+                          )}
                           <div className="catalog-tech-chips">
                             <span>
                               <Zap size={12} />
-                              {item.voltage ? `${item.voltage}V supply` : "Circuit-dependent"}
+                              {item.custom && item.spec
+                                ? `${item.spec.operatingVoltage.min}–${item.spec.operatingVoltage.max}V range`
+                                : item.voltage ? `${item.voltage}V supply` : "Circuit-dependent"}
                             </span>
                             <span>
                               <CircuitBoard size={12} />
@@ -398,31 +425,44 @@ export function CatalogPage() {
                           >
                             View specifications <span aria-hidden="true">→</span>
                           </button>
-                          <div className="grid grid-cols-2 gap-2">
-                            <Button
-                              size="sm"
-                              variant="secondary"
-                              className="px-1.5 text-[10px]"
-                              onClick={() => add(item)}
-                            >
-                              {bom.some((entry) => entry.key === item.key) ? (
-                                <Check size={13} />
-                              ) : (
-                                <Package size={13} />
-                              )}
-                              Add to BOM
-                            </Button>
-                            <Button
-                              size="sm"
-                              className="px-1.5 text-[10px]"
-                              onClick={() => openLab(item)}
-                            >
-                              <Box size={13} />
-                              Add to 3D Lab
-                            </Button>
-                          </div>
+                          {item.custom ? (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button size="sm" className="px-1.5 text-[10px]" onClick={() => openLab(item)}>
+                                <Box size={13} />
+                                Add to 3D Lab
+                              </Button>
+                              <Button size="sm" variant="ghost" className="px-1.5 text-[10px]" onClick={() => removeCustom(item)}>
+                                <X size={13} />
+                                Remove
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-2 gap-2">
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                className="px-1.5 text-[10px]"
+                                onClick={() => add(item)}
+                              >
+                                {bom.some((entry) => entry.key === item.key) ? (
+                                  <Check size={13} />
+                                ) : (
+                                  <Package size={13} />
+                                )}
+                                Add to BOM
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="px-1.5 text-[10px]"
+                                onClick={() => openLab(item)}
+                              >
+                                <Box size={13} />
+                                Add to 3D Lab
+                              </Button>
+                            </div>
+                          )}
                         </div>
-                        <ComponentConnectionSheet item={item} />
+                        {!item.custom && <ComponentConnectionSheet item={item} />}
                       </article>
                     ))}
                   </div>
@@ -465,6 +505,11 @@ export function CatalogPage() {
                 <span className="catalog-category catalog-detail-category">
                   {categoryLabel(selected.category)}
                 </span>
+                {selected.custom && (
+                  <span className="inline-flex w-fit rounded-full bg-soft-amber px-2.5 py-1 text-[10px] font-semibold">
+                    AI-generated part — verify with the datasheet
+                  </span>
+                )}
                 <ComponentPreview model={selected.model} />
                 <p dir="rtl" className="text-sm leading-7">
                   {selected.description}
@@ -473,7 +518,9 @@ export function CatalogPage() {
                   <div>
                     <p className="text-muted-foreground">Typical supply</p>
                     <strong>
-                      {selected.voltage ? `${selected.voltage} V` : "Circuit-dependent"}
+                      {selected.custom && selected.spec
+                        ? `${selected.spec.operatingVoltage.min}–${selected.spec.operatingVoltage.max} V`
+                        : selected.voltage ? `${selected.voltage} V` : "Circuit-dependent"}
                     </strong>
                   </div>
                   <div>
@@ -483,7 +530,7 @@ export function CatalogPage() {
                     </strong>
                   </div>
                 </div>
-                <ComponentConnectionSheet key={selected.key} item={selected} expanded />
+                {!selected.custom && <ComponentConnectionSheet key={selected.key} item={selected} expanded />}
                 <section>
                   <h3 className="text-xs font-bold">Pins · {selected.def.pins.length}</h3>
                   <div className="mt-2 flex flex-wrap gap-1.5">
@@ -515,14 +562,22 @@ export function CatalogPage() {
                   )}
                 </section>
                 <div className="flex flex-wrap gap-2">
-                  <Button variant="secondary" onClick={() => add(selected)}>
-                    <Package size={15} />
-                    Add to BOM
-                  </Button>
+                  {!selected.custom && (
+                    <Button variant="secondary" onClick={() => add(selected)}>
+                      <Package size={15} />
+                      Add to BOM
+                    </Button>
+                  )}
                   <Button onClick={() => openLab(selected)}>
                     <Box size={15} />
                     Add to 3D Lab
                   </Button>
+                  {selected.custom && (
+                    <Button variant="ghost" onClick={() => removeCustom(selected)}>
+                      <X size={15} />
+                      Remove from My parts
+                    </Button>
+                  )}
                 </div>
               </>
             )}

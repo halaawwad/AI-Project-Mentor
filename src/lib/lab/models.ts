@@ -2300,6 +2300,45 @@ function referenceRadio(b: B, def: PartDef) {
   });
 }
 
+function customBreakout(b: B, def: PartDef) {
+  const twoRows = def.pins.length > 8;
+  pcb(b, def.w, def.d, def.color, false);
+  headers(b, def);
+
+  const blockW = Math.min(0.7, def.w * 0.34);
+  const blockD = Math.min(0.55, def.d * 0.3);
+  const blockZ = twoRows ? 0.18 : 0.02;
+  chip(
+    b,
+    blockW,
+    blockD,
+    twoRows ? -Math.min(0.22, def.w * 0.14) : 0,
+    blockZ,
+    false,
+    "#20252a",
+  );
+  smd(b, Math.min(def.w * 0.28, 0.55), -def.d * 0.23, "#b8a36a");
+  smd(b, -Math.min(def.w * 0.28, 0.55), -def.d * 0.23, "#b8a36a");
+  marking(
+    b,
+    def.name,
+    Math.max(0.55, def.w * 0.7),
+    0.14,
+    twoRows ? Math.min(0.25, def.w * 0.16) : 0,
+    PCB_T + 0.002,
+    twoRows ? -0.08 : -def.d / 2 + 0.22,
+    "#edf4ec",
+    42,
+  );
+  const rowLength = twoRows ? Math.ceil(def.pins.length / 2) : def.pins.length;
+  const labelWidth = Math.min(0.28, (def.w - 0.3) / Math.max(1, rowLength - 1) * 0.82);
+  def.pins.forEach((pin, index) => {
+    const [x, , z] = pinLocal(def, index);
+    const labelZ = z > 0 ? z - 0.17 : z + 0.17;
+    marking(b, pin.name, labelWidth, 0.1, x, PCB_T + 0.002, labelZ, "#edf4ec", 34);
+  });
+}
+
 export function buildModel(def: PartDef): THREE.Group {
   const previous = [materialCache, geometryCache] as const;
   materialCache = new Map();
@@ -2313,6 +2352,10 @@ export function buildModel(def: PartDef): THREE.Group {
 
 function buildParts(def: PartDef): THREE.Group {
   const b = new B();
+  if (def.id.startsWith("custom-")) {
+    customBreakout(b, def);
+    return b.g;
+  }
   switch (def.category) {
     case "Microcontrollers":
       microcontroller(b, def);

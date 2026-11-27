@@ -46,6 +46,7 @@ export function CatalogCategoryShowcase({
   onSpotlight,
   onBrowse,
   actions,
+  totalParts,
 }: {
   category: string;
   onCategory: (category: string) => void;
@@ -57,6 +58,7 @@ export function CatalogCategoryShowcase({
   onSpotlight: (item: CatalogComponent) => void;
   onBrowse: () => void;
   actions?: ReactNode;
+  totalParts?: number;
 }) {
   const index = catalogCategories.indexOf(category),
     active = Math.max(0, index);
@@ -94,7 +96,7 @@ export function CatalogCategoryShowcase({
         </span>
         <div className="catalog-workbench-tools">
           <button aria-pressed={index < 0} onClick={() => onCategory("All")}>
-            All components <b>43</b>
+            All components <b>{totalParts ?? componentCatalog.length}</b>
           </button>
           {actions}
         </div>

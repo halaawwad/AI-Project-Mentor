@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as THREE from "three";
 import { CATALOG } from "./catalog";
+import { customPartDefinition, useCustomParts } from "./customParts";
 import { buildModel } from "./models";
 import {
   configureRenderer,
@@ -15,11 +16,21 @@ let cachedPreviews: Record<string, string> | undefined;
 
 /** Render the actual workspace models once, using one temporary WebGL context. */
 export function usePartPreviews() {
+  const customParts = useCustomParts();
+  const definitions = useMemo(
+    () => [...CATALOG, ...customParts.map(customPartDefinition)],
+    [customParts],
+  );
   const [previews, setPreviews] = useState<Record<string, string>>(cachedPreviews ?? {});
 
   useEffect(() => {
-    if (cachedPreviews) return;
     let cancelled = false;
+    const existing = cachedPreviews ?? {};
+    const missing = definitions.filter((def) => !existing[def.id] || def.id.startsWith("custom-"));
+    if (!missing.length) {
+      setPreviews(existing);
+      return;
+    }
     let renderer: THREE.WebGLRenderer | undefined;
     let environment: THREE.WebGLRenderTarget | undefined;
     let shadowTexture: THREE.Texture | undefined;
@@ -39,7 +50,7 @@ export function usePartPreviews() {
         shadowTexture = createContactShadowTexture();
         const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
         const images: Record<string, string> = {};
-        for (const def of CATALOG) {
+        for (const def of missing) {
           if (cancelled) break;
           const model = buildModel(def);
           scene.add(model);
@@ -88,12 +99,12 @@ export function usePartPreviews() {
               if (texture !== shadowTexture) texture.dispose();
             });
           }
-          if (!cancelled) setPreviews({ ...images });
+          if (!cancelled) setPreviews({ ...existing, ...images });
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
         }
         if (!cancelled) {
-          cachedPreviews = images;
-          setPreviews(images);
+          cachedPreviews = { ...existing, ...images };
+          setPreviews(cachedPreviews);
         }
       } catch (error) {
         console.warn("Component previews could not be rendered", error);
@@ -107,7 +118,7 @@ export function usePartPreviews() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [definitions]);
 
   return previews;
 }

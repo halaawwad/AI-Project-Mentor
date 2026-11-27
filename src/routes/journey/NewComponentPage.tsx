@@ -1,16 +1,32 @@
 import { Link } from "@tanstack/react-router";
-import { useState } from "react";
-import { Boxes, FileSearch, ListChecks, Loader2, PackagePlus, ShieldAlert, Sparkles } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Boxes,
+  FileSearch,
+  Loader2,
+  PackagePlus,
+  ShieldAlert,
+  Sparkles,
+  Trash2,
+} from "lucide-react";
 import { FallbackReasonNote, StillWorking } from "@/components/AiLabel";
+import { ComponentPreview } from "@/components/ComponentPreview";
 import { JourneyLayout } from "@/components/journey/JourneyUi";
 import { Button } from "@/components/ui/button";
 import { runAiOnce } from "@/lib/ai/useAi";
 import { cleanPartName, componentCheckpoint, lookupComponent, type ComponentLookup } from "@/lib/journey/componentAi";
+import {
+  customPartDefinition,
+  customPartId,
+  deleteCustomPart,
+  saveCustomPart,
+  useCustomParts,
+} from "@/lib/lab/customParts";
 import { useJourney } from "@/lib/journey/store";
 import { LEARNER_ID } from "@/lib/learner";
 import { useDocumentTitle } from "@/lib/useDocumentTitle";
 
-/** The remaining steps that still aren't built: no web search and no 3D model generation. */
+/** Online datasheet and external model search remain unavailable in this client-only demo. */
 const plannedSteps = [
   {
     icon: FileSearch,
@@ -22,13 +38,7 @@ const plannedSteps = [
     icon: Boxes,
     title: "External 3D model search",
     arabic: "البحث عن نموذج ثلاثي الأبعاد",
-    text: "Search model libraries for the part, or prepare a simple model with its pins for the 3D Lab.",
-  },
-  {
-    icon: ListChecks,
-    title: "Review and add to the catalog",
-    arabic: "المراجعة والإضافة إلى الكتالوج",
-    text: "Check the pins and sources, then add the part so it can be used in paths, the BOM and the lab.",
+    text: "For an official model, check the manufacturer site, KiCad library or SnapEDA.",
   },
 ];
 
@@ -36,11 +46,13 @@ const plannedSteps = [
 export function NewComponentPage() {
   useDocumentTitle("New component | AiPM");
   const journey = useJourney();
+  const savedParts = useCustomParts();
   const language = journey.language;
   const dir = language === "ar" ? "rtl" : "ltr";
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<{ name: string; value: ComponentLookup } | null>(null);
+  const [saveNotice, setSaveNotice] = useState("");
   const ask = async (force = false) => {
     const part = cleanPartName(name);
     if (busy || part.length < 2) return;
@@ -62,15 +74,49 @@ export function NewComponentPage() {
     }
   };
   const value = result?.value;
+  const readySpec = value?.kind === "ai" ? value.info.partSpec : undefined;
+  const previewPart =
+    value?.kind === "ai" && readySpec
+      ? {
+          id: customPartId(value.info.name),
+          name: value.info.name,
+          spec: readySpec,
+        }
+      : undefined;
+  const savedPreview = useMemo(
+    () => (previewPart ? customPartDefinition(previewPart) : undefined),
+    [previewPart?.id, previewPart?.name, readySpec],
+  );
+  const savePart = () => {
+    if (!value || value.kind !== "ai" || !value.info.partSpec) return;
+    try {
+      saveCustomPart(value.info.name, value.info.partSpec);
+      setSaveNotice(`${value.info.name} saved to My parts.`);
+    } catch {
+      setSaveNotice("Could not save this part. Check the local storage notice and try again.");
+    }
+  };
+  const removePart = (id: string, partName: string) => {
+    if (!window.confirm(`Remove ${partName} from My parts? Saved lab projects using it may no longer load.`))
+      return;
+    try {
+      deleteCustomPart(id);
+      setSaveNotice(`${partName} removed from My parts.`);
+    } catch {
+      setSaveNotice("Could not remove this part. Check the local storage notice and try again.");
+    }
+  };
   return (
     <JourneyLayout step="parts" eyebrow="New component" title="Add a new component" arabic="إضافة قطعة جديدة">
       <section className="glass-panel rounded-panel p-5">
         <p className="text-sm">
-          The catalog has 43 parts. For another part, the mentor can describe it in general terms. It doesn't search the web
-          and never invents datasheet links or 3D models.
+          The catalog has 43 parts. For another part, the mentor can describe it and build a generic
+          3D breakout model from a checked pin specification. Confirm every detail against the exact
+          part's datasheet before wiring.
         </p>
         <p dir="rtl" className="text-xs text-muted-foreground">
-          يصف المرشد القطعة بشكل عام فقط، ولا يبحث في الإنترنت ولا يخترع روابط Datasheet أو نماذج ثلاثية الأبعاد.
+          يمكن للمرشد وصف القطعة وإنشاء نموذج لوحة عام من مواصفات أطراف تم التحقق منها. تحقّق من
+          جميع التفاصيل في Datasheet الرسمي قبل التوصيل.
         </p>
         <label htmlFor="new-part" className="mt-4 block text-xs font-semibold">
           Part name or number · اسم القطعة أو رقمها
@@ -174,16 +220,104 @@ export function NewComponentPage() {
             <p className="rounded-lg border border-dashed border-border p-2">
               Datasheet: not linked — find the manufacturer's document for your exact part. · لم يُرفق رابط.
             </p>
-            <p className="rounded-lg border border-dashed border-border p-2">3D model: not available yet · النموذج ثلاثي الأبعاد غير متاح بعد</p>
+            <p className="rounded-lg border border-dashed border-border p-2">
+              This is a generic procedural model, not an official model of the exact part.
+            </p>
           </div>
+          {readySpec && savedPreview ? (
+            <section className="grid gap-4 border-t border-border/70 pt-4 md:grid-cols-[minmax(0,1fr)_minmax(15rem,0.8fr)]">
+              <div>
+                <h3 className="text-sm font-semibold">Generated 3D breakout model</h3>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {readySpec.category} · {readySpec.boardSizeMm.width} × {readySpec.boardSizeMm.depth} mm ·{" "}
+                  {readySpec.pins.length} labeled pins
+                </p>
+                {value.info.specRepairs?.length ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Model layout adjusted for fit: {value.info.specRepairs.join(", ")}.
+                  </p>
+                ) : null}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Button size="sm" onClick={savePart}>
+                    <PackagePlus size={14} />
+                    {savedParts.some((part) => part.id === customPartId(value.info.name))
+                      ? "Update my parts"
+                      : "Add to my parts"}
+                  </Button>
+                  {savedParts.some((part) => part.id === customPartId(value.info.name)) && (
+                    <Button size="sm" variant="secondary" asChild>
+                      <Link
+                        to="/lab"
+                        search={{
+                          add: customPartId(value.info.name),
+                          request: Date.now().toString(),
+                        }}
+                      >
+                        Place in 3D Lab
+                      </Link>
+                    </Button>
+                  )}
+                </div>
+              </div>
+              <ComponentPreview model={customPartId(value.info.name)} definition={savedPreview} />
+            </section>
+          ) : (
+            <p className="rounded-lg border border-dashed border-border p-3 text-xs" role="note">
+              The information is available, but its pin specification could not be verified. No 3D
+              part was created. {value.info.specWarning}
+            </p>
+          )}
         </section>
       )}
 
-      <ol className="grid gap-4 md:grid-cols-3">
+      {saveNotice && (
+        <p className="text-sm" role="status">
+          {saveNotice}
+        </p>
+      )}
+
+      <section className="glass-panel space-y-3 rounded-panel p-5">
+        <h2 className="text-base font-bold">My AI-generated parts</h2>
+        <p className="text-xs text-muted-foreground">
+          Saved on this device. Verify every pin and voltage against the exact datasheet.
+        </p>
+        {savedParts.length ? (
+          <ul className="divide-y divide-border/70">
+            {savedParts.map((part) => (
+              <li key={part.id} className="flex flex-wrap items-center gap-2 py-3">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold">{part.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {part.spec.category} · {part.spec.pins.length} pins · AI-generated part — verify with the datasheet
+                  </p>
+                </div>
+                <Button size="sm" variant="secondary" asChild>
+                  <Link to="/catalog" search={{ part: part.id }}>Catalog</Link>
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  aria-label={`Remove ${part.name} from My parts`}
+                  onClick={() => removePart(part.id, part.name)}
+                >
+                  <Trash2 size={14} />
+                  Remove
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="rounded-lg border border-dashed border-border p-3 text-sm text-muted-foreground">
+            No saved parts yet. A verified pin specification will let you add one here.
+          </p>
+        )}
+      </section>
+
+      <ol className="grid gap-4 md:grid-cols-2">
         {plannedSteps.map(({ icon: Icon, title, arabic, text }, i) => (
           <li key={title} className="glass-panel rounded-panel p-5 opacity-80">
             <span className="ds-kicker">
-              Step {i + 1} · Coming soon
+              {title === "External 3D model search" ? "Coming soon" : "Not available yet"}
             </span>
             <h2 className="mt-2 flex items-center gap-2 text-sm font-bold">
               <Icon size={16} /> {title}
@@ -192,8 +326,10 @@ export function NewComponentPage() {
               {arabic}
             </p>
             <p className="mt-2 text-sm">{text}</p>
-            <p className="mt-3 rounded-lg border border-dashed border-border p-3 text-center text-xs text-muted-foreground">
-              Coming soon · قريباً — this step isn't built yet.
+            <p className="mt-3 rounded-lg border border-dashed border-border p-3 text-xs text-muted-foreground">
+              {title === "External 3D model search"
+                ? "Coming soon · قريباً — external model search is not available."
+                : "Not available in this offline demo."}
             </p>
           </li>
         ))}

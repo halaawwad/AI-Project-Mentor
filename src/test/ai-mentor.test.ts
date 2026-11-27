@@ -137,6 +137,17 @@ function componentBody(change: (b: Record<string, unknown>) => void = () => {}) 
     typicalUse: "عرض الأرقام مثل العدّاد أو الساعة في المشاريع الصغيرة.",
     projectFit: "يمكن أن تعرض العدّ التنازلي لعبور المشاة في إشارة المرور.",
     safetyNotes: ["افصل التغذية قبل تغيير التوصيلات."],
+    partSpec: {
+      category: "Displays & LEDs",
+      boardSizeMm: { width: 30, depth: 20 },
+      operatingVoltage: { min: 3.3, max: 5 },
+      pins: [
+        { name: "CLK", kind: "digital", logicVoltage: 5 },
+        { name: "DIO", kind: "digital", logicVoltage: 5 },
+        { name: "VCC", kind: "power", logicVoltage: null },
+        { name: "GND", kind: "ground", logicVoltage: null },
+      ],
+    },
   };
   change(body);
   return body;
@@ -415,6 +426,12 @@ describe("AI new component information", () => {
     const result = await lookupComponent({ learnerId: "a", ctx, config, client });
     expect(result.kind).toBe("ai");
     expect(result.kind === "ai" && result.info.typicalPins.map((p) => p.name)).toEqual(["CLK", "DIO", "VCC", "GND"]);
+    expect(result.kind === "ai" && result.info.partSpec?.pins.map((p) => p.kind)).toEqual([
+      "digital",
+      "digital",
+      "power",
+      "ground",
+    ]);
     await lookupComponent({ learnerId: "a", ctx: { ...ctx, name: "  tm1637 4-digit   DISPLAY " }, config, client });
     expect(spy).toHaveBeenCalledTimes(1);
     expect(systemOf(params(spy))).toContain("Never give links");
@@ -434,6 +451,21 @@ describe("AI new component information", () => {
   ])("rejects information with %s and invents nothing", async (_, change) => {
     const result = await lookupComponent({ learnerId: "a", ctx, config, client: fakeClient(async () => response(componentBody(change))).client });
     expect(result).toEqual({ kind: "none", fallbackReason: "bad-response" });
+  });
+  it("keeps useful information when the part spec cannot be used to create a model", async () => {
+    const result = await lookupComponent({
+      learnerId: "a",
+      ctx,
+      config,
+      client: fakeClient(async () =>
+        response(componentBody((body) => {
+          (body["partSpec"] as Record<string, unknown>)["pins"] = [];
+        })),
+      ).client,
+    });
+    expect(result.kind).toBe("ai");
+    expect(result.kind === "ai" && result.info.partSpec).toBeUndefined();
+    expect(result.kind === "ai" && result.info.specWarning).toContain("pin count");
   });
   it("falls back without a key", async () => {
     expect(await lookupComponent({ learnerId: "a", ctx, config: noKey })).toEqual({ kind: "none", fallbackReason: "missing-key" });
@@ -457,6 +489,10 @@ describe("demo cache and Demo readiness", () => {
     expect(new Set(aiCacheEntries().map((e) => e.learner))).toEqual(new Set([LEARNER_ID]));
     expect(progress.filter((p) => !p.endsWith(":requesting")).every((p) => p.endsWith(":prepared"))).toBe(true);
     expect(demoSteps("ar").every((s) => isCached(s, "ar"))).toBe(true);
+    const componentStep = demoSteps("ar").find((step) => step.feature === "component")!;
+    expect(
+      getAiCache(LEARNER_ID, "component", componentStep.checkpoint, "ar")?.value,
+    ).toMatchObject({ partSpec: { category: "Displays & LEDs", pins: expect.any(Array) } });
     // A second run sends nothing.
     const again = await prepareDemo({ language: "ar", config, client: failing().client, sleep });
     expect(again).toEqual({ requests: 0, stopped: null });

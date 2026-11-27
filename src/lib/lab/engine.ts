@@ -360,7 +360,7 @@ export class LabEngine {
       "nrf24l01",
       "breadboard",
       "breadboard-400",
-    ].includes(def.id);
+    ].includes(def.id) || def.id.startsWith("custom-");
     const headGeo = new THREE.SphereGeometry(detailedHeader ? 0.045 : 0.07, 14, 10);
     const nameBacking = new THREE.MeshBasicMaterial({ color: "#f7faf9", side: THREE.DoubleSide });
     const rowCount = def.pins.length > 8 ? Math.ceil(def.pins.length / 2) : def.pins.length;

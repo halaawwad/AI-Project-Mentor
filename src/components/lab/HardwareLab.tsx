@@ -35,6 +35,7 @@ import {
   PIN_COLORS,
   type Category,
 } from "@/lib/lab/catalog";
+import { customPartDefinition, useCustomParts } from "@/lib/lab/customParts";
 import { usePartPreviews } from "@/lib/lab/usePartPreviews";
 import { LabEngine, type Selection } from "@/lib/lab/engine";
 import {
@@ -83,6 +84,11 @@ export function HardwareLab({
   addRequest,
 }: { addComponent?: string | undefined; addRequest?: string | undefined } = {}) {
   const P = useProject();
+  const customParts = useCustomParts();
+  const allParts = useMemo(
+    () => [...CATALOG, ...customParts.map(customPartDefinition)],
+    [customParts],
+  );
   const [leftOpen, setLeftOpen] = useState(
       () => typeof window === "undefined" || window.innerWidth >= 900,
     ),
@@ -403,7 +409,7 @@ export function HardwareLab({
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const parts = CATALOG.filter(
+  const parts = allParts.filter(
     (c) =>
       !["resistor-220", "resistor-10k"].includes(c.id) &&
       (cat === "All" || c.category === cat) &&
@@ -611,7 +617,7 @@ export function HardwareLab({
               <h2 className="text-sm font-semibold">Component Library</h2>
               <div className="flex items-center gap-2">
                 <span className="font-mono text-[10px] text-muted-foreground">
-                  {CATALOG.length} parts
+                  {allParts.length} parts
                 </span>
                 <button
                   aria-label="Hide component library"
@@ -675,6 +681,11 @@ export function HardwareLab({
                   <div className="text-[11px] text-muted-foreground">
                     {c.category} · {c.pins.length} pins
                   </div>
+                  {c.id.startsWith("custom-") && (
+                    <div className="mt-1 text-[9px] font-medium leading-tight text-amber-700">
+                      AI-generated part — verify with the datasheet
+                    </div>
+                  )}
                 </div>
               </div>
             ))}

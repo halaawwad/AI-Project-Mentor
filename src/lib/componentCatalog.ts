@@ -1,4 +1,10 @@
 import { CATALOG_MAP } from "./lab/catalog";
+import {
+  customPartDefinition,
+  type CustomPartSpec,
+  type SavedCustomPart,
+} from "./lab/customParts";
+import type { Category, PartDef } from "./lab/catalog";
 import { readLocal, STORAGE_KEYS, writeLocal } from "./storage";
 
 export const catalogCategories = [
@@ -56,7 +62,20 @@ const rows: [string, string, string, number, number][] = [
   ["nrf24l01", "nrf24l01", "وحدة اتصال لاسلكي nRF24L01+", 6, 3.3],
   ["water_pump_5v", "water-pump", "مضخة ماء صغيرة 5 فولت", 2, 5],
 ];
-export const componentCatalog = rows.map(([key, model, arabic, category, voltage]) => {
+export interface CatalogComponent {
+  key: string;
+  model: string;
+  arabic: string;
+  category: string;
+  voltage: number;
+  name: string;
+  def: PartDef;
+  description: string;
+  custom?: true;
+  spec?: CustomPartSpec;
+}
+
+export const componentCatalog: CatalogComponent[] = rows.map(([key, model, arabic, category, voltage]) => {
   const def = CATALOG_MAP[model]!;
   const name =
     key === "raspberry_pi_4"
@@ -75,7 +94,32 @@ export const componentCatalog = rows.map(([key, model, arabic, category, voltage
     description: `${arabic} — ${name}. ${category === 0 ? "لوحة لبناء وبرمجة المشاريع الإلكترونية والتحكم بالمكونات." : category === 1 ? "مكوّن لاستشعار الظروف المحيطة وربطه بوحدة التحكم." : category === 2 ? "مكوّن يحوّل إشارة التحكم إلى حركة أو صوت أو تدفق ماء." : category === 3 ? "مكوّن لعرض البيانات والمعلومات في مشروعك." : category === 6 ? "وحدة لإرسال البيانات واستقبالها بين الأجهزة." : "مكوّن لدعم التوصيل والتحكم في الدوائر الإلكترونية."}`,
   };
 });
-export type CatalogComponent = (typeof componentCatalog)[number];
+
+const categoryIndex: Record<Category, number> = {
+  Microcontrollers: 0,
+  Sensors: 1,
+  Actuators: 2,
+  "Displays & LEDs": 3,
+  "Passive & Input": 4,
+  "Motor Drivers": 5,
+  Wireless: 6,
+};
+export const customCatalogComponent = (part: SavedCustomPart): CatalogComponent => {
+  const def = customPartDefinition(part);
+  return {
+    key: part.id,
+    model: part.id,
+    arabic: "قطعة مولدة بالذكاء الاصطناعي — تحقّق من الـDatasheet",
+    category: catalogCategories[categoryIndex[def.category]]!,
+    voltage: part.spec.operatingVoltage.max,
+    name: part.name,
+    def,
+    description:
+      "AI-generated procedural model. Verify the pinout, voltage range and physical fit against the datasheet for the exact part.",
+    custom: true,
+    spec: part.spec,
+  };
+};
 /** English labels for `catalogCategories`, in the same order (from LabAssist catalog-preview). */
 export const catalogCategoryLabels = [
   "Control Boards",

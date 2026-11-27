@@ -48,6 +48,7 @@ export function connectorFor(type: string, pin: number): ConnectorKind {
   const def = CATALOG_MAP[type],
     name = def?.pins[pin]?.name;
   if (!name) return "unknown";
+  if (type.startsWith("custom-")) return "header";
   if (
     [
       "arduino-uno",

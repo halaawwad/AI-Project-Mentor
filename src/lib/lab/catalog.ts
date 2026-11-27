@@ -841,6 +841,16 @@ export const PIN_COLORS: Record<PinKind, string> = {
 };
 /** Shared positions for visible sockets, pin targets and wiring. */
 export function pinLocal(def: PartDef, index: number): [number, number, number] {
+  if (def.id.startsWith("custom-")) {
+    const twoRows = def.pins.length > 8;
+    const rowLength = twoRows ? Math.ceil(def.pins.length / 2) : def.pins.length;
+    const row = twoRows ? Math.floor(index / rowLength) : 0;
+    const column = index - row * rowLength;
+    const count = Math.min(rowLength, def.pins.length - row * rowLength);
+    const x = count === 1 ? 0 : (column / (count - 1) - 0.5) * (def.w - 0.3);
+    const z = row === 0 ? def.d / 2 - 0.12 : -def.d / 2 + 0.12;
+    return [x, 0.22, z];
+  }
   if (def.id === "power-source") return [(index - 0.5) * 0.4, 0.22, 0.57];
   if (def.id === "power-switch") return [(index - 0.5) * 0.3, 0.12, 0.46];
   if (def.id === "xl4015") return [index < 2 ? -0.8 : 0.8, 0.2, index % 2 ? 0.2 : -0.2];
