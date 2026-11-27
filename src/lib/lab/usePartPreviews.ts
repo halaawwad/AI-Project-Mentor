@@ -1,8 +1,15 @@
 import { useEffect, useState } from "react";
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { CATALOG } from "./catalog";
 import { buildModel } from "./models";
+import {
+  configureRenderer,
+  createContactShadow,
+  createContactShadowTexture,
+  createEnvironment,
+  createLightRig,
+  readSceneTokens,
+} from "./studio";
 
 let cachedPreviews: Record<string, string> | undefined;
 
@@ -15,33 +22,38 @@ export function usePartPreviews() {
     let cancelled = false;
     let renderer: THREE.WebGLRenderer | undefined;
     let environment: THREE.WebGLRenderTarget | undefined;
+    let shadowTexture: THREE.Texture | undefined;
     void (async () => {
       try {
         renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
         renderer.setSize(192, 144);
         renderer.setClearColor(0x000000, 0);
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        configureRenderer(renderer);
         const scene = new THREE.Scene();
-        const pmrem = new THREE.PMREMGenerator(renderer);
-        const room = new RoomEnvironment();
-        environment = pmrem.fromScene(room, 0.04);
+        // Same studio as the catalog previews and the 3D Lab.
+        const tokens = readSceneTokens(document.documentElement);
+        environment = createEnvironment(renderer);
         scene.environment = environment.texture;
-        scene.environmentIntensity = 0.6;
-        room.dispose();
-        pmrem.dispose();
-        scene.add(new THREE.HemisphereLight(0xffffff, 0x64748b, 1.4));
-        const light = new THREE.DirectionalLight(0xffffff, 2.2);
-        light.position.set(-3, 6, 4);
-        scene.add(light);
+        scene.environmentIntensity = 0.55;
+        scene.add(createLightRig(tokens));
+        shadowTexture = createContactShadowTexture();
         const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
         const images: Record<string, string> = {};
         for (const def of CATALOG) {
           if (cancelled) break;
           const model = buildModel(def);
           scene.add(model);
+          const footprint = new THREE.Box3().setFromObject(model);
+          const size = footprint.getSize(new THREE.Vector3());
+          const shadow = createContactShadow(shadowTexture, size.x * 1.15 + 0.2, size.z * 1.15 + 0.2, tokens, 0.3);
+          shadow.position.set(
+            (footprint.min.x + footprint.max.x) / 2,
+            footprint.min.y + 0.002,
+            (footprint.min.z + footprint.max.z) / 2,
+          );
+          model.add(shadow);
           try {
-            const bounds = new THREE.Box3().setFromObject(model);
+            const bounds = footprint;
             const center = bounds.getCenter(new THREE.Vector3());
             const radius = bounds.getBoundingSphere(new THREE.Sphere()).radius;
             const halfHeight = Math.max(radius * 1.15, 0.3);
@@ -72,7 +84,9 @@ export function usePartPreviews() {
               if (map) textures.add(map);
               material.dispose();
             });
-            textures.forEach((texture) => texture.dispose());
+            textures.forEach((texture) => {
+              if (texture !== shadowTexture) texture.dispose();
+            });
           }
           if (!cancelled) setPreviews({ ...images });
           await new Promise<void>((resolve) => setTimeout(resolve, 0));
@@ -85,6 +99,7 @@ export function usePartPreviews() {
         console.warn("Component previews could not be rendered", error);
       } finally {
         environment?.dispose();
+        shadowTexture?.dispose();
         renderer?.dispose();
         renderer?.forceContextLoss();
       }

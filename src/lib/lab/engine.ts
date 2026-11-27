@@ -1,5 +1,4 @@
 import * as THREE from "three";
-import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import {
   CATALOG_MAP,
   placedDefinition,
@@ -9,6 +8,16 @@ import {
   type PartDef,
 } from "./catalog";
 import { buildModel } from "./models";
+import {
+  configureRenderer,
+  createContactShadow,
+  createContactShadowTexture,
+  createEnvironment,
+  createGrid,
+  createLightRig,
+  readSceneTokens,
+  type SceneTokens,
+} from "./studio";
 import { wireRadius, type CircuitData, type PinRef, type Wire } from "./types";
 
 export type Selection = { kind: "part" | "wire"; id: string } | null;
@@ -51,7 +60,12 @@ export class LabEngine {
   private wireGroup = new THREE.Group();
   private wireMeshes = new Map<string, THREE.Mesh>();
   private draftWireRadius = 0.045;
-  private grid: THREE.GridHelper;
+  private grid: THREE.Group;
+  private tokens: SceneTokens;
+  /** Shared by every part's contact shadow and selection pad; disposed once, with the engine. */
+  private softTexture: THREE.Texture;
+  private hoverMarker: THREE.Group;
+  private environment: THREE.WebGLRenderTarget;
   private handle: THREE.Mesh;
   private preview: THREE.Mesh | null = null;
   private data: CircuitData = { parts: [], wires: [] };
@@ -73,56 +87,47 @@ export class LabEngine {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
-    this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    configureRenderer(this.renderer);
     el.appendChild(this.renderer.domElement);
     this.renderer.domElement.style.display = "block";
 
     this.camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 200);
-    const palette = getComputedStyle(el.closest(".hardware-lab") ?? el);
-    this.scene.background = new THREE.Color(palette.getPropertyValue("--background").trim());
-    const pmrem = new THREE.PMREMGenerator(this.renderer);
-    this.scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-    this.scene.environmentIntensity = 0.6;
-    pmrem.dispose();
+    // Palette from the design tokens (board surface, ink, solder-mask accent, rail red).
+    this.tokens = readSceneTokens(el.closest(".hardware-lab") ?? el);
+    this.scene.background = this.tokens.board.clone();
+    this.environment = createEnvironment(this.renderer);
+    this.scene.environment = this.environment.texture;
+    this.scene.environmentIntensity = 0.55;
 
-    // lights
-    this.scene.add(new THREE.HemisphereLight("#ffffff", "#b8c7c9", 1.4));
-    const sun = new THREE.DirectionalLight("#ffffff", 2.2);
-    sun.position.set(8, 20, 6);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    sun.shadow.radius = 6;
-    sun.shadow.bias = -0.0005;
-    const s = sun.shadow.camera;
-    s.left = s.bottom = -25;
-    s.right = s.top = 25;
-    this.scene.add(sun);
-    const fill = new THREE.DirectionalLight("#bff3ea", 0.6);
-    fill.position.set(-10, 8, -6);
-    this.scene.add(fill);
+    // Soft key / fill / rim rig; only the key light casts (one 2048 shadow map).
+    this.scene.add(createLightRig(this.tokens, { shadows: true, span: 25, mapSize: 2048 }));
 
-    // ground mat
+    // Ground: the same breadboard surface as the page, matte, receiving soft shadows.
     const groundMesh = new THREE.Mesh(
       new THREE.PlaneGeometry(200, 200),
-      new THREE.MeshStandardMaterial({ color: "#f7f9f9", roughness: 0.95 }),
+      new THREE.MeshStandardMaterial({
+        color: this.tokens.board.clone().lerp(new THREE.Color("#ffffff"), this.tokens.dark ? 0 : 0.12),
+        roughness: 1,
+        metalness: 0,
+        envMapIntensity: 0.4,
+      }),
     );
     groundMesh.rotation.x = -Math.PI / 2;
     groundMesh.receiveShadow = true;
     this.scene.add(groundMesh);
 
-    this.grid = new THREE.GridHelper(80, 160, "#8fa7b6", "#bacbd5");
-    (this.grid.material as THREE.Material).transparent = true;
-    (this.grid.material as THREE.Material).opacity = 0.88;
-    this.grid.position.y = 0.002;
+    this.grid = createGrid(this.tokens);
     this.scene.add(this.grid);
     this.scene.add(this.wireGroup);
+    this.softTexture = createContactShadowTexture();
+    this.hoverMarker = this.createHoverMarker();
+    this.scene.add(this.hoverMarker);
 
     this.handle = new THREE.Mesh(
       new THREE.SphereGeometry(0.16, 16, 12),
       new THREE.MeshStandardMaterial({
-        color: "#0d9488",
-        emissive: "#0d9488",
+        color: this.tokens.accent,
+        emissive: this.tokens.accent,
         emissiveIntensity: 0.4,
       }),
     );
@@ -147,6 +152,7 @@ export class LabEngine {
       this.raf = requestAnimationFrame(loop);
       if (this.dirty) {
         this.dirty = false;
+        this.placeHoverMarker();
         this.renderer.render(this.scene, this.camera);
       }
     };
@@ -168,6 +174,8 @@ export class LabEngine {
       }
     });
     this.pinLabelCache.forEach((t) => t.dispose());
+    this.softTexture.dispose();
+    this.environment.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
@@ -200,6 +208,67 @@ export class LabEngine {
     this.target.set(0, 0, 0);
     this.camera.zoom = 1;
     this.updateCamera();
+  }
+
+  // ---------- interaction feedback (visual only)
+  /** A flat ring and soft halo shown on the hovered pin, drawn over sockets and headers. */
+  private createHoverMarker() {
+    const group = new THREE.Group();
+    group.name = "pin-hover";
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.085, 0.115, 32),
+      new THREE.MeshBasicMaterial({ color: "#ffffff", depthTest: false, transparent: true, toneMapped: false }),
+    );
+    const halo = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.42, 0.42),
+      new THREE.MeshBasicMaterial({
+        map: this.softTexture,
+        color: "#ffffff",
+        transparent: true,
+        opacity: 0.55,
+        depthTest: false,
+        depthWrite: false,
+        toneMapped: false,
+      }),
+    );
+    for (const m of [halo, ring]) {
+      m.rotation.x = -Math.PI / 2;
+      m.raycast = () => {};
+      group.add(m);
+    }
+    ring.renderOrder = 21;
+    halo.renderOrder = 20;
+    group.visible = false;
+    return group;
+  }
+
+  /** Shows the ring on `pin` in that pin's signal colour, or hides it. */
+  private setHoverPin(pin: THREE.Mesh | null) {
+    if (this.hoverPin) this.hoverPin.scale.setScalar(1);
+    if (pin) pin.scale.setScalar(1.45);
+    this.hoverPin = pin;
+    if (pin) {
+      const ref = pin.userData as PinRef;
+      const placed = this.data.parts.find((p) => p.id === ref.partId);
+      const def = placed ? placedDefinition(placed) : undefined;
+      const kind = def?.pins[ref.pin]?.kind;
+      const color = new THREE.Color(kind ? PIN_COLORS[kind] : this.tokens.accent);
+      this.hoverMarker.children.forEach((child) =>
+        ((child as THREE.Mesh).material as THREE.MeshBasicMaterial).color.copy(color),
+      );
+    }
+    this.dirty = true;
+  }
+
+  private placeHoverMarker() {
+    const pin = this.hoverPin;
+    if (!pin || !pin.parent?.parent) {
+      this.hoverMarker.visible = false;
+      return;
+    }
+    pin.getWorldPosition(this.hoverMarker.position);
+    this.hoverMarker.position.y += 0.03;
+    this.hoverMarker.visible = true;
   }
 
   // ---------- scene sync
@@ -299,12 +368,14 @@ export class LabEngine {
     const labelDepth = 0.65;
     const uno = def.id === "arduino-uno";
 
+    const postMaterial = new THREE.MeshStandardMaterial({
+      color: "#c9a227",
+      metalness: 1,
+      roughness: 0.26,
+    });
     def.pins.forEach((p, i) => {
       const [x, y, z] = pinLocal(def, i);
-      const post = new THREE.Mesh(
-        header,
-        new THREE.MeshStandardMaterial({ color: "#c9a227", metalness: 0.8, roughness: 0.3 }),
-      );
+      const post = new THREE.Mesh(header, postMaterial);
       post.position.set(x, y + 0.04, z);
       post.raycast = () => {};
       if (uno || detailedHeader) post.visible = false;
@@ -335,10 +406,19 @@ export class LabEngine {
       if (detailedHeader) return;
     });
 
+    // Contact shadow: grounds the part softly, also under the shadow-map penumbra.
+    group.add(createContactShadow(this.softTexture, def.w + 0.35, def.d + 0.35, this.tokens, 0.28));
+    // Selection pad: a soft accent glow on the ground, shown with the outline.
+    const pad = createContactShadow(this.softTexture, def.w + 0.7, def.d + 0.7, this.tokens, 0.5);
+    pad.name = "selection-pad";
+    pad.position.y = 0.006;
+    pad.visible = false;
+    group.add(pad);
+
     // selection outline
     const outline = new THREE.LineSegments(
       new THREE.EdgesGeometry(new THREE.BoxGeometry(def.w + 0.12, def.h + 0.06, def.d + 0.12)),
-      new THREE.LineBasicMaterial({ color: "#0d9488" }),
+      new THREE.LineBasicMaterial({ color: this.tokens.accent, toneMapped: false }),
     );
     outline.position.y = def.h / 2;
     outline.visible = false;
@@ -352,7 +432,7 @@ export class LabEngine {
 
   private disposeObj(o: THREE.Object3D) {
     const maps = new Set<THREE.Texture>();
-    const labelMaps = new Set(this.pinLabelCache.values());
+    const labelMaps = new Set<THREE.Texture>([...this.pinLabelCache.values(), this.softTexture]);
     o.traverse((c) => {
       if (c instanceof THREE.Mesh || c instanceof THREE.LineSegments) {
         c.geometry.dispose();
@@ -391,7 +471,13 @@ export class LabEngine {
       const sel = this.selection?.kind === "part" && this.selection.id === p.id;
       const outline = obj.group.getObjectByName("outline") as THREE.LineSegments;
       outline.visible = sel || this.flagged.has(p.id);
-      (outline.material as THREE.LineBasicMaterial).color.set(sel ? "#0d9488" : "#e5484d");
+      const tone = sel ? this.tokens.accent : this.tokens.danger;
+      (outline.material as THREE.LineBasicMaterial).color.copy(tone);
+      const pad = obj.group.getObjectByName("selection-pad") as THREE.Mesh | undefined;
+      if (pad) {
+        pad.visible = outline.visible;
+        (pad.material as THREE.MeshBasicMaterial).color.copy(tone);
+      }
       obj.group.updateMatrixWorld(true);
     }
   }
@@ -470,14 +556,14 @@ export class LabEngine {
       old.geometry = geo;
       const m = old.material as THREE.MeshStandardMaterial;
       m.color.set(w.color);
-      m.emissive.set(sel ? "#14b8a6" : "#000000");
+      m.emissive.set(sel ? this.tokens.accent : "#000000");
     } else {
       const mesh = new THREE.Mesh(
         geo,
         new THREE.MeshStandardMaterial({
           color: w.color,
           roughness: 0.45,
-          emissive: sel ? "#14b8a6" : "#000000",
+          emissive: sel ? this.tokens.accent : "#000000",
           emissiveIntensity: 0.6,
         }),
       );
@@ -598,21 +684,14 @@ export class LabEngine {
     if (md.m === "idle") {
       if (e.target !== this.renderer.domElement) {
         if (this.hoverPin) {
-          this.hoverPin.scale.setScalar(1);
-          this.hoverPin = null;
-          this.dirty = true;
+          this.setHoverPin(null);
           this.cb.onPinInfo(null);
         }
         return;
       }
       this.setNdc(e);
       const pin = this.hitPin();
-      if (pin !== this.hoverPin) {
-        if (this.hoverPin) this.hoverPin.scale.setScalar(1);
-        if (pin) pin.scale.setScalar(1.45);
-        this.hoverPin = pin;
-        this.dirty = true;
-      }
+      if (pin !== this.hoverPin) this.setHoverPin(pin);
       const overBody =
         !pin &&
         this.ray.intersectObjects(
@@ -675,7 +754,11 @@ export class LabEngine {
       if (!this.preview) {
         this.preview = new THREE.Mesh(
           geo,
-          new THREE.MeshStandardMaterial({ color: "#14b8a6", transparent: true, opacity: 0.75 }),
+          new THREE.MeshStandardMaterial({
+            color: this.tokens.accent,
+            transparent: true,
+            opacity: 0.75,
+          }),
         );
         this.scene.add(this.preview);
       } else {

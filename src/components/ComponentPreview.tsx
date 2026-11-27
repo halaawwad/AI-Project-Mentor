@@ -4,6 +4,14 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { CATALOG_MAP } from "@/lib/lab/catalog";
 import { buildModel } from "@/lib/lab/models";
 import { createCatalogDemo } from "@/lib/lab/catalogDemo";
+import {
+  configureRenderer,
+  createContactShadow,
+  createContactShadowTexture,
+  createEnvironment,
+  createLightRig,
+  readSceneTokens,
+} from "@/lib/lab/studio";
 import { RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
 
 export function ComponentPreview({
@@ -31,24 +39,37 @@ export function ComponentPreview({
     let frame = 0;
     const materials = new Set<THREE.Material>();
     const textures = new Set<THREE.Texture>();
+    let environment: THREE.WebGLRenderTarget | undefined;
+    let shadow: THREE.Mesh | undefined;
     try {
       renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, showcase ? 2.5 : 2));
-      renderer.outputColorSpace = THREE.SRGBColorSpace;
-      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      configureRenderer(renderer);
       renderer.domElement.setAttribute(
         "aria-label",
         "Interactive component: drag to rotate, scroll to zoom",
       );
       element.appendChild(renderer.domElement);
       const scene = new THREE.Scene();
-      scene.add(new THREE.HemisphereLight(0xffffff, 0x64748b, 2.5));
-      const light = new THREE.DirectionalLight(0xffffff, 3);
-      light.position.set(-3, 6, 4);
-      scene.add(light);
+      // Same studio as the 3D Lab: token palette, room reflections, key/fill/rim lights.
+      const tokens = readSceneTokens(element);
+      environment = createEnvironment(renderer);
+      scene.environment = environment.texture;
+      scene.environmentIntensity = 0.55;
+      scene.add(createLightRig(tokens));
       part = buildModel(def);
       scene.add(part);
       const bounds = new THREE.Box3().setFromObject(part);
+      const footprint = bounds.getSize(new THREE.Vector3());
+      shadow = createContactShadow(
+        createContactShadowTexture(),
+        footprint.x * 1.18 + 0.2,
+        footprint.z * 1.18 + 0.2,
+        tokens,
+        0.3,
+      );
+      shadow.position.set((bounds.min.x + bounds.max.x) / 2, bounds.min.y + 0.002, (bounds.min.z + bounds.max.z) / 2);
+      scene.add(shadow);
       const center = bounds.getCenter(new THREE.Vector3());
       const radius = Math.max(bounds.getBoundingSphere(new THREE.Sphere()).radius, 0.1);
       const demo =
@@ -157,6 +178,13 @@ export function ComponentPreview({
         material.dispose();
       });
       textures.forEach((texture) => texture.dispose());
+      if (shadow) {
+        shadow.geometry.dispose();
+        const material = shadow.material as THREE.MeshBasicMaterial;
+        material.map?.dispose();
+        material.dispose();
+      }
+      environment?.dispose();
       renderer?.dispose();
       renderer?.forceContextLoss();
       renderer?.domElement.remove();

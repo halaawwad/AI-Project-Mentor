@@ -4,20 +4,66 @@
 import * as THREE from "three";
 import { pinLocal, type PartDef } from "./catalog";
 
+// Materials and geometries are shared within one buildModel() call: identical parameters give
+// the same object, so a 40-pin header uses one plastic and one metal material instead of 80.
+// The cache is scoped to a single build because the lab and the previews dispose each part's
+// resources when it is removed, and the catalog demo animates its own model's LED materials.
+let materialCache: Map<string, THREE.Material> | null = null;
+let geometryCache: Map<string, THREE.BufferGeometry> | null = null;
+function shared<T>(cache: Map<string, T> | null, key: string, make: () => T): T {
+  if (!cache) return make();
+  let value = cache.get(key);
+  if (!value) {
+    value = make();
+    cache.set(key, value);
+  }
+  return value;
+}
+const mat = <T extends THREE.Material>(key: string, make: () => T) =>
+  shared(materialCache as Map<string, T> | null, key, make);
+
 const std = (color: string, o: Partial<THREE.MeshStandardMaterialParameters> = {}) =>
-  new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05, ...o });
-const metal = (color = "#c8ccd0") => std(color, { metalness: 0.9, roughness: 0.28 });
-const plastic = (color: string) => std(color, { roughness: 0.42 });
+  mat(
+    `std:${color}:${JSON.stringify(o)}`,
+    () => new THREE.MeshStandardMaterial({ color, roughness: 0.55, metalness: 0.05, ...o }),
+  );
+/** Polished pins, leads and shields: fully metallic, low roughness, lit by the environment. */
+const metal = (color = "#c8ccd0") =>
+  std(color, { metalness: 1, roughness: 0.24, envMapIntensity: 1.15 });
+/** Moulded plastic bodies: matte, non-metallic. */
+const plastic = (color: string) => std(color, { roughness: 0.62, metalness: 0 });
+/** LED lenses and segment covers: clear epoxy with a coloured tint. */
 const glass = (color: string, opacity = 0.7) =>
-  new THREE.MeshPhysicalMaterial({
-    color,
-    roughness: 0.12,
-    transmission: 0.4,
-    transparent: true,
-    opacity,
-    emissive: color,
-    emissiveIntensity: 0.25,
-  });
+  mat(
+    `glass:${color}:${opacity}`,
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color,
+        roughness: 0.08,
+        transmission: 0.55,
+        thickness: 0.3,
+        ior: 1.5,
+        clearcoat: 1,
+        clearcoatRoughness: 0.05,
+        transparent: true,
+        opacity,
+        emissive: color,
+        emissiveIntensity: 0.2,
+      }),
+  );
+/** Glossy solder mask over FR-4: a clear-coated, slightly satin colour. */
+const solderMask = (color: string) =>
+  mat(
+    `mask:${color}`,
+    () =>
+      new THREE.MeshPhysicalMaterial({
+        color,
+        roughness: 0.55,
+        metalness: 0,
+        clearcoat: 0.22,
+        clearcoatRoughness: 0.45,
+      }),
+  );
 
 type V3 = [number, number, number];
 
@@ -33,15 +79,25 @@ class B {
     return m;
   }
   box(w: number, h: number, d: number, mat: THREE.Material, x = 0, y = 0, z = 0, rot?: V3) {
-    return this.add(new THREE.BoxGeometry(w, h, d), mat, [x, y + h / 2, z], rot);
+    const geo = shared(geometryCache, `box:${w}:${h}:${d}`, () => new THREE.BoxGeometry(w, h, d));
+    return this.add(geo, mat, [x, y + h / 2, z], rot);
   }
   cyl(r: number, h: number, mat: THREE.Material, x = 0, y = 0, z = 0, seg = 24, rTop = r) {
-    return this.add(new THREE.CylinderGeometry(rTop, r, h, seg), mat, [x, y + h / 2, z]);
+    const geo = shared(
+      geometryCache,
+      `cyl:${rTop}:${r}:${h}:${seg}`,
+      () => new THREE.CylinderGeometry(rTop, r, h, seg),
+    );
+    return this.add(geo, mat, [x, y + h / 2, z]);
   }
   /** cylinder lying along X */
   cylX(r: number, len: number, mat: THREE.Material, x = 0, y = 0, z = 0, seg = 24) {
     return this.add(
-      new THREE.CylinderGeometry(r, r, len, seg),
+      shared(
+        geometryCache,
+        `cyl:${r}:${r}:${len}:${seg}`,
+        () => new THREE.CylinderGeometry(r, r, len, seg),
+      ),
       mat,
       [x, y, z],
       [0, 0, Math.PI / 2],
@@ -50,7 +106,11 @@ class B {
   /** cylinder lying along Z */
   cylZ(r: number, len: number, mat: THREE.Material, x = 0, y = 0, z = 0, seg = 24) {
     return this.add(
-      new THREE.CylinderGeometry(r, r, len, seg),
+      shared(
+        geometryCache,
+        `cyl:${r}:${r}:${len}:${seg}`,
+        () => new THREE.CylinderGeometry(r, r, len, seg),
+      ),
       mat,
       [x, y, z],
       [Math.PI / 2, 0, 0],
@@ -80,10 +140,14 @@ function printSurface(
   draw(ctx);
   const map = new THREE.CanvasTexture(canvas);
   map.colorSpace = THREE.SRGBColorSpace;
-  const material = new THREE.MeshBasicMaterial({
+  map.anisotropy = 4;
+  // Lit like the board it is printed on, so silkscreen shares its shadows and highlights.
+  const material = new THREE.MeshStandardMaterial({
     map,
     transparent: true,
     depthWrite: false,
+    roughness: 0.75,
+    metalness: 0,
     polygonOffset: true,
     polygonOffsetFactor: -1,
   });
@@ -172,10 +236,11 @@ function pcb(
   }
   b.add(
     new THREE.ExtrudeGeometry(shape, { depth: PCB_T, bevelEnabled: false, curveSegments: 10 }),
-    std(color, { roughness: 0.65 }),
+    solderMask(color),
     [0, 0, 0],
     [-Math.PI / 2, 0, 0],
   );
+  if (w > 0.9 && d > 0.7) copperTraces(b, w, d, color);
   if (holes && w > 0.9 && d > 0.7) {
     const ring = metal("#d4b45a");
     for (const [x, z] of mounts) {
@@ -187,6 +252,58 @@ function pcb(
       );
     }
   }
+}
+
+/**
+ * Copper traces seen through the solder mask: slightly lighter satin lines with a few vias.
+ * Drawn once per board into a small canvas; the layout is seeded by the board size, so the
+ * same part always gets the same traces.
+ */
+function copperTraces(b: B, w: number, d: number, mask: string) {
+  const tone = new THREE.Color(mask).lerp(new THREE.Color("#ffffff"), 0.2).getStyle();
+  const width = 512;
+  const height = Math.max(128, Math.min(512, Math.round((512 * d) / w)));
+  let seed = Math.round(w * 1000 + d * 77) || 1;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  printSurface(
+    b,
+    w * 0.96,
+    d * 0.94,
+    0,
+    PCB_T + 0.0012,
+    0,
+    (ctx) => {
+      ctx.strokeStyle = tone;
+      ctx.fillStyle = tone;
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.globalAlpha = 0.5;
+      const traces = 10 + Math.round(rand() * 8);
+      for (let i = 0; i < traces; i++) {
+        let x = rand() * width,
+          y = rand() * height;
+        ctx.lineWidth = rand() < 0.2 ? 6 : 2.5;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        // Orthogonal runs joined by 45 degree jogs, as a PCB router draws them.
+        for (let step = 0; step < 3; step++) {
+          const run = (40 + rand() * 140) * (rand() < 0.5 ? -1 : 1);
+          const jog = (rand() < 0.5 ? -1 : 1) * (10 + rand() * 20);
+          if ((i + step) % 2 === 0) x += run;
+          else y += run;
+          ctx.lineTo(x, y);
+          x += jog;
+          y += Math.abs(jog);
+          ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(x, y, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    },
+    [width, height],
+  );
 }
 
 /** Black female/male header strips under every pin row. */
@@ -240,6 +357,35 @@ function terminal(b: B, n: number, x: number, z: number, color = "#2f6fd6") {
     b.box(0.115, 0.11, 0.009, plastic("#162a2e"), sx, PCB_T + 0.05, z + 0.165);
   }
 }
+/**
+ * LED leads: the anode (or the RGB common lead) is the long leg, drawn with a crank bend so it
+ * reads as longer; the others run straight. Every lead still ends exactly at its pin position.
+ */
+function ledLegs(b: B, def: PartDef, from: number) {
+  const lm = metal("#d4d8dc");
+  def.pins.forEach((pin, i) => {
+    const [x, y, z] = pinLocal(def, i);
+    const a = new THREE.Vector3(
+      x * 0.6,
+      Math.max(from, 0.05),
+      Math.min(z - 0.2, def.d / 2 - 0.05),
+    );
+    const c = new THREE.Vector3(x, y, z);
+    const side = Math.sign(x) || 1;
+    const long = /^(ANODE|COMMON)$/i.test(pin.name);
+    const points = long
+      ? [
+          a,
+          a.clone().lerp(c, 0.35).add(new THREE.Vector3(side * 0.07, 0.02, 0)),
+          a.clone().lerp(c, 0.55).add(new THREE.Vector3(side * 0.07, -0.01, 0)),
+          c,
+        ]
+      : [a, c];
+    const curve = new THREE.CatmullRomCurve3(points, false, "catmullrom", 0.05);
+    b.add(new THREE.TubeGeometry(curve, long ? 18 : 2, 0.02, 8, false), lm, [0, 0, 0]);
+  });
+}
+
 function legsDown(b: B, def: PartDef, from: number) {
   // metal leads from the body's front-bottom out to each pin
   const lm = metal("#d0d4d8");
@@ -713,7 +859,7 @@ function arduinoUno(b: B, def: PartDef) {
     map.colorSpace = THREE.SRGBColorSpace;
     const legend = b.add(
       new THREE.PlaneGeometry(1.32, 0.33),
-      new THREE.MeshBasicMaterial({ map, transparent: true, depthWrite: false }),
+      new THREE.MeshStandardMaterial({ map, transparent: true, depthWrite: false, roughness: 0.75 }),
       [0.63, 0.068, -0.38],
       [-Math.PI / 2, 0, 0],
     );
@@ -1803,7 +1949,7 @@ function display(b: B, def: PartDef) {
     b.box(0.045, 0.27, 0.035, metal(), -0.065, 0.29, -0.05);
     b.box(0.095, 0.12, 0.065, metal(), 0.055, 0.4, -0.05);
     b.box(0.06, 0.009, 0.02, std("#ddd3a9"), 0, 0.51, -0.05);
-    legsDown(b, def, 0.28);
+    ledLegs(b, def, 0.28);
     return;
   }
   if (id === "seven-seg") {
@@ -2155,6 +2301,17 @@ function referenceRadio(b: B, def: PartDef) {
 }
 
 export function buildModel(def: PartDef): THREE.Group {
+  const previous = [materialCache, geometryCache] as const;
+  materialCache = new Map();
+  geometryCache = new Map();
+  try {
+    return buildParts(def);
+  } finally {
+    [materialCache, geometryCache] = previous;
+  }
+}
+
+function buildParts(def: PartDef): THREE.Group {
   const b = new B();
   switch (def.category) {
     case "Microcontrollers":
